@@ -342,6 +342,49 @@ Proje aşağıdaki alanlar için otomatik testler içerir:
 
 ---
 
+
+---
+
+Yaptığımız değişiklikler projeyi yalnızca “80K’da böl” mantığından daha akıllı bir Markdown birleştirme sistemine çevirdi; özellikle boş kalan kapasiteyi sonraki kaynaktan güvenli şekilde dolduruyor. Token sınırı hâlâ varsayılan olarak **80.000** ve bunu değiştirmek için artık Python koduna dokunman gerekmiyor.
+
+1. **Pratikte ne değişti?** Önceden 12K stres testinde 51 çıktı oluşuyordu ve bazı ara dosyalar yalnızca `%46–64` doluyordu. Yeni sistem Markdown başlıklarını ve code fence yapılarını dikkate alıyor, kalan kapasiteyi adaptif kullanıyor, `<512` token mikro-parçaları engelliyor; aynı test `51 → 48` dosyaya düştü. 80K gerçek testinde ise 7 dosya çıktı; ilk altısı yaklaşık `%99.98` doldu, en büyüğü `79,992` token oldu ve hiçbir dosya 80K'yı aşmadı.
+
+2. **Şimdiki token sınırı nedir?** Varsayılan sınır **80,000 token**. CLI'da da gördüğün gibi `--token-limit` varsayılanı `80000`.
+
+3. **Token sınırını değiştirmek için tek bir değişkenle uğraşabilir miyim?** Daha iyisi var: **hiçbir Python dosyasını değiştirmene gerek yok.** Çalıştırırken sadece istediğin değeri verirsin:
+
+```bash
+cd "/mnt/local/areas/markdownMerge"
+
+uv run python main.py \
+    INPUT_DIRECTORY \
+    OUTPUT_DIRECTORY \
+    --token-limit 100000
+```
+
+Örneğin tekrar 80K:
+
+```bash
+uv run python main.py INPUT_DIRECTORY OUTPUT_DIRECTORY --token-limit 80000
+```
+
+50K:
+
+```bash
+uv run python main.py INPUT_DIRECTORY OUTPUT_DIRECTORY --token-limit 50000
+```
+
+120K:
+
+```bash
+uv run python main.py INPUT_DIRECTORY OUTPUT_DIRECTORY --token-limit 120000
+```
+
+Yani **tek kontrol noktası `--token-limit`**. Splitter, adaptive packer, final validation, manifest ve ekrandaki `% Capacity` hesabı bu değeri otomatik kullanıyor.
+
+
+
+
 ## Lisans
 
 MIT License.
