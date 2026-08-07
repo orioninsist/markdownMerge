@@ -224,7 +224,7 @@ def display_result(result: MergeResult) -> None:
     parts.add_column("SHA-256", overflow="fold")
 
     for part in result.output_parts:
-        capacity = part.token_count / 80_000 * 100
+        capacity = part.token_count / result.token_limit * 100
 
         parts.add_row(
             str(part.part_number),

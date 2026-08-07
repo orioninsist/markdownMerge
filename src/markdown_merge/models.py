@@ -92,3 +92,4 @@ class MergeResult:
     log_path: Path
     statistics: MergeStatistics
     elapsed_seconds: float
+    token_limit: int

@@ -15,7 +15,7 @@ from markdown_merge.models import (
     MergeStatistics,
 )
 from markdown_merge.naming import derive_output_prefix
-from markdown_merge.packer import pack_segments
+from markdown_merge.packer import pack_segments_adaptively
 from markdown_merge.reader import read_source_document
 from markdown_merge.splitter import split_source_document
 from markdown_merge.tokenizer import TokenCounter
@@ -130,6 +130,7 @@ class MarkdownMergeService:
                 document=document,
                 token_budget=segment_budget,
                 token_counter=self._token_counter,
+                minimum_split_search_tokens=(self._config.minimum_split_search_tokens),
             )
 
             if len(segments) > 1:
@@ -161,11 +162,12 @@ class MarkdownMergeService:
             "Calculating final part boundaries",
         )
 
-        packed_parts = pack_segments(
+        packed_parts = pack_segments_adaptively(
             segments=all_segments,
             token_limit=self._config.token_limit,
             encoding_name=self._config.encoding_name,
             token_counter=self._token_counter,
+            minimum_split_search_tokens=(self._config.minimum_split_search_tokens),
         )
 
         progress_callback(
@@ -229,4 +231,5 @@ class MarkdownMergeService:
             log_path=self._log_path,
             statistics=statistics,
             elapsed_seconds=elapsed_seconds,
+            token_limit=self._config.token_limit,
         )

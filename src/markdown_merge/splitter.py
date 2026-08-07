@@ -3,42 +3,173 @@
 from __future__ import annotations
 
 import re
+from dataclasses import dataclass
 from pathlib import Path
 
 from markdown_merge.models import DocumentSegment, SourceDocument
 from markdown_merge.renderer import render_segment
 from markdown_merge.tokenizer import TokenCounter
 
-_SAFE_BOUNDARY_PATTERNS = (
-    re.compile(r"\n(?=#{1,6}\s)", flags=re.MULTILINE),
-    re.compile(r"\n(?=---\s*$)", flags=re.MULTILINE),
-    re.compile(r"\n\n+", flags=re.MULTILINE),
-    re.compile(r"\n", flags=re.MULTILINE),
+_FENCE_PATTERN = re.compile(r"^[ \t]{0,3}(`{3,}|~{3,})")
+_HEADING_PATTERN = re.compile(r"^[ \t]{0,3}#{1,6}[ \t]+")
+_THEMATIC_BREAK_PATTERN = re.compile(
+    r"^[ \t]{0,3}(?:"
+    r"(?:\*[ \t]*){3,}|"
+    r"(?:-[ \t]*){3,}|"
+    r"(?:_[ \t]*){3,}"
+    r")[ \t]*$"
 )
 
 
-def _find_safe_character_boundary(text: str, target_character: int) -> int:
-    """Find the nearest useful Markdown boundary before a target position."""
-    minimum_position = max(1, int(target_character * 0.70))
+@dataclass(frozen=True, slots=True)
+class _Boundary:
+    """A candidate Markdown split position."""
 
-    for pattern in _SAFE_BOUNDARY_PATTERNS:
-        candidates = [
-            match.start()
-            for match in pattern.finditer(
-                text,
-                minimum_position,
-                min(len(text), target_character + 1),
-            )
-        ]
-        if candidates:
-            return candidates[-1]
+    position: int
+    priority: int
 
-    return target_character
+
+def _fence_marker(line: str) -> tuple[str, int] | None:
+    """Return the opening/closing fence marker and length for a line."""
+    match = _FENCE_PATTERN.match(line)
+    if match is None:
+        return None
+
+    marker = match.group(1)
+    return marker[0], len(marker)
+
+
+def _is_closing_fence(
+    line: str,
+    fence_character: str,
+    minimum_length: int,
+) -> bool:
+    """Return whether a line closes the currently active fenced block."""
+    stripped = line.lstrip(" \t")
+    if not stripped.startswith(fence_character * minimum_length):
+        return False
+
+    marker_length = 0
+    for character in stripped:
+        if character != fence_character:
+            break
+        marker_length += 1
+
+    if marker_length < minimum_length:
+        return False
+
+    return stripped[marker_length:].strip() == ""
+
+
+def _markdown_boundaries(text: str) -> list[_Boundary]:
+    """Collect useful split boundaries that are outside fenced code blocks."""
+    boundaries: dict[int, int] = {}
+    offset = 0
+    in_fence = False
+    fence_character = ""
+    fence_length = 0
+    previous_blank = False
+
+    for line in text.splitlines(keepends=True):
+        line_without_ending = line.rstrip("\r\n")
+        line_start = offset
+        line_end = offset + len(line)
+
+        if in_fence:
+            if _is_closing_fence(
+                line_without_ending,
+                fence_character=fence_character,
+                minimum_length=fence_length,
+            ):
+                in_fence = False
+                fence_character = ""
+                fence_length = 0
+                boundaries[line_end] = max(boundaries.get(line_end, 0), 90)
+
+            offset = line_end
+            previous_blank = line_without_ending.strip() == ""
+            continue
+
+        marker = _fence_marker(line_without_ending)
+        if marker is not None:
+            fence_character, fence_length = marker
+            in_fence = True
+
+            if line_start > 0:
+                boundaries[line_start] = max(boundaries.get(line_start, 0), 95)
+
+            offset = line_end
+            previous_blank = False
+            continue
+
+        stripped = line_without_ending.strip()
+        is_blank = stripped == ""
+
+        if _HEADING_PATTERN.match(line_without_ending):
+            if line_start > 0:
+                boundaries[line_start] = max(boundaries.get(line_start, 0), 100)
+
+        elif line_start > 0 and _THEMATIC_BREAK_PATTERN.match(line_without_ending):
+            boundaries[line_start] = max(boundaries.get(line_start, 0), 98)
+
+        if is_blank:
+            boundaries[line_end] = max(boundaries.get(line_end, 0), 80)
+
+        elif previous_blank and line_start > 0:
+            boundaries[line_start] = max(boundaries.get(line_start, 0), 85)
+
+        boundaries[line_end] = max(boundaries.get(line_end, 0), 20)
+
+        offset = line_end
+        previous_blank = is_blank
+
+    return [
+        _Boundary(position=position, priority=priority)
+        for position, priority in sorted(boundaries.items())
+        if 0 < position < len(text)
+    ]
+
+
+def _choose_safe_boundary(
+    text: str,
+    maximum_content_tokens: int,
+    minimum_split_search_tokens: int,
+    token_counter: TokenCounter,
+) -> int:
+    """Choose the best Markdown boundary near the maximum token capacity."""
+    token_ids = token_counter.encode(text)
+
+    if len(token_ids) <= maximum_content_tokens:
+        return len(text)
+
+    maximum_prefix = token_counter.decode(token_ids[:maximum_content_tokens])
+    maximum_character = len(maximum_prefix)
+
+    search_floor_tokens = max(
+        1,
+        maximum_content_tokens - minimum_split_search_tokens,
+    )
+    search_floor_prefix = token_counter.decode(token_ids[:search_floor_tokens])
+    search_floor_character = len(search_floor_prefix)
+
+    candidates = [
+        boundary
+        for boundary in _markdown_boundaries(maximum_prefix)
+        if search_floor_character <= boundary.position <= maximum_character
+    ]
+
+    if candidates:
+        best_priority = max(boundary.priority for boundary in candidates)
+        same_priority = [boundary for boundary in candidates if boundary.priority == best_priority]
+        return max(boundary.position for boundary in same_priority)
+
+    return maximum_character
 
 
 def _largest_prefix_within_limit(
     text: str,
     maximum_content_tokens: int,
+    minimum_split_search_tokens: int,
     token_counter: TokenCounter,
 ) -> tuple[str, str]:
     """Split text into the largest safe prefix and remaining suffix."""
@@ -47,15 +178,16 @@ def _largest_prefix_within_limit(
     if len(token_ids) <= maximum_content_tokens:
         return text, ""
 
-    rough_prefix = token_counter.decode(token_ids[:maximum_content_tokens])
-    character_boundary = _find_safe_character_boundary(
-        rough_prefix,
-        len(rough_prefix),
+    character_boundary = _choose_safe_boundary(
+        text=text,
+        maximum_content_tokens=maximum_content_tokens,
+        minimum_split_search_tokens=minimum_split_search_tokens,
+        token_counter=token_counter,
     )
-    candidate = rough_prefix[:character_boundary].rstrip()
+    candidate = text[:character_boundary].rstrip()
 
     if not candidate:
-        candidate = rough_prefix.rstrip()
+        candidate = token_counter.decode(token_ids[:maximum_content_tokens]).rstrip()
 
     while candidate and token_counter.count(candidate) > maximum_content_tokens:
         candidate_tokens = token_counter.encode(candidate)
@@ -66,6 +198,27 @@ def _largest_prefix_within_limit(
 
     remaining = text[len(candidate) :].lstrip()
     return candidate, remaining
+
+
+def split_content_prefix(
+    text: str,
+    maximum_content_tokens: int,
+    minimum_split_search_tokens: int,
+    token_counter: TokenCounter,
+) -> tuple[str, str]:
+    """Split arbitrary Markdown content at the best safe boundary."""
+    if maximum_content_tokens <= 0:
+        raise ValueError("maximum_content_tokens must be positive.")
+
+    if minimum_split_search_tokens < 0:
+        raise ValueError("minimum_split_search_tokens cannot be negative.")
+
+    return _largest_prefix_within_limit(
+        text=text,
+        maximum_content_tokens=maximum_content_tokens,
+        minimum_split_search_tokens=minimum_split_search_tokens,
+        token_counter=token_counter,
+    )
 
 
 def _maximum_content_tokens(
@@ -95,16 +248,21 @@ def split_source_document(
     document: SourceDocument,
     token_budget: int,
     token_counter: TokenCounter,
+    minimum_split_search_tokens: int = 512,
 ) -> list[DocumentSegment]:
     """Split a source into segments that individually fit the budget."""
+    if minimum_split_search_tokens < 0:
+        raise ValueError("minimum_split_search_tokens cannot be negative.")
+
     whole_rendered = render_segment(
         source_path=document.relative_path,
         segment_index=1,
         segment_count=1,
         content=document.content,
     )
+    whole_rendered_tokens = token_counter.count(whole_rendered)
 
-    if token_counter.count(whole_rendered) <= token_budget:
+    if whole_rendered_tokens <= token_budget:
         return [
             DocumentSegment(
                 source_path=document.relative_path,
@@ -112,7 +270,7 @@ def split_source_document(
                 segment_count=1,
                 content=document.content,
                 rendered_content=whole_rendered,
-                token_count=token_counter.count(whole_rendered),
+                token_count=whole_rendered_tokens,
             )
         ]
 
@@ -131,6 +289,7 @@ def split_source_document(
         prefix, remaining = _largest_prefix_within_limit(
             text=remaining,
             maximum_content_tokens=maximum_content,
+            minimum_split_search_tokens=minimum_split_search_tokens,
             token_counter=token_counter,
         )
         provisional_contents.append(prefix)
