@@ -1,390 +1,449 @@
-# Markdown Merge
+# 🚀 Project Overview
 
-Large Markdown collections için geliştirilmiş, token sınırına duyarlı ve üretim kullanıma hazır bir Python aracıdır.
+**markdownMerge** is now a production-ready Markdown processing and merging system designed for very large documentation collections.
 
-Markdown Merge; kaynak dosyaları yalnızca art arda eklemek yerine içerikleri temizler, kaynak sınırlarını korur, otomatik içindekiler bölümü oluşturur, `tiktoken` ile gerçek token sayımı yapar ve belirlenen sınırı aşmayan çıktı parçaları üretir.
+The system reads thousands of Markdown files, cleans them, preserves file boundaries, calculates exact tokens using **tiktoken**, and automatically creates optimized output parts based on a user-defined token limit.
 
-Proje; yapay zeka dokümantasyon hazırlığı, RAG sistemleri, semantik arama, embedding üretimi ve büyük bilgi tabanlarının düzenlenmesi için tasarlanmıştır.
+The key design principle:
 
----
-
-## Özellikler
-
-- Yalnızca Python ile geliştirilmiştir.
-- `.md` ve `.markdown` dosyalarını destekler.
-- Kaynak klasörü ve tüm alt klasörleri tarar.
-- Markdown dışındaki dosyaları yok sayar.
-- Gereksiz boş satırları temizler.
-- Bozuk ve gereksiz HTML parçalarını temizler.
-- Uzun Base64 görsel verilerini kaldırır.
-- Her kaynak dosyanın önüne kaynak etiketi ekler.
-- Her çıktı parçası için otomatik içindekiler bölümü üretir.
-- OpenAI `tiktoken` kütüphanesiyle gerçek token sayımı yapar.
-- Varsayılan olarak her çıktı dosyasını en fazla 80.000 token ile sınırlar.
-- Büyük kaynak belgeleri güvenli Markdown sınırlarından böler.
-- Dosyaları atomik biçimde yazar.
-- Her çıktı için SHA-256 özeti üretir.
-- Kaynak ve çıktı eşleşmelerini JSON manifest dosyasına kaydeder.
-- Her çalıştırma için zaman damgalı log dosyası oluşturur.
-- Rich tabanlı terminal arayüzü ve çalışma istatistikleri sunar.
-- İçeriğe göre genel ve akıllı çıktı adı üretir.
-- Ruff, MyPy, Pytest ve coverage kontrollerini destekler.
-- Terminalin herhangi bir konumundan `mdmerge` komutuyla çalışır.
+> **Files are never manually split or modified. The system only decides where a new output part starts based on token capacity.**
 
 ---
 
-## Akıllı Çıktı İsimlendirme
-
-Özel bir çıktı adı verilmediğinde proje Markdown koleksiyonunu otomatik analiz eder.
-
-Analiz sırasında şunlar değerlendirilir:
-
-- kaynak klasörün anlamlı adı
-- Markdown belge başlıkları
-- tekrar eden başlık ifadeleri
-- koleksiyon içinde tekrar eden anlamlı terimler
-
-Örnek otomatik çıktı adları:
-
-    Instagram_Help_Center_Part_01_of_16.md
-    Acme_API_Reference_Part_01_of_04.md
-    Product_User_Guide_Part_01_of_03.md
-    Merged_Markdown_Part_01_of_02.md
-
-İsimlendirme herhangi bir siteye veya markaya özel değildir. Her çalıştırmada verilen Markdown koleksiyonu yeniden analiz edilir.
-
-İstenirse otomatik isimlendirme geçersiz kılınabilir:
-
-    mdmerge INPUT_DIRECTORY OUTPUT_DIRECTORY --output-prefix Custom_Name
-
----
-
-## Gereksinimler
-
-- Python 3.13 veya üzeri
-- uv
-- tiktoken
-
----
-
-## Kurulum
-
-Depoyu klonlayın:
-
-    git clone https://github.com/YOUR_USERNAME/markdownMerge.git
-    cd markdownMerge
-
-Proje ortamını ve tüm bağımlılıkları kurun:
-
-    uv sync --all-groups
-
-Global terminal komutunu kurun:
-
-    uv tool install --editable . --force
-
-Global komutun çalıştığını doğrulayın:
-
-    mdmerge --version
-    mdmerge --help
-
----
-
-## Kullanım
-
-Temel kullanım:
-
-    mdmerge INPUT_DIRECTORY OUTPUT_DIRECTORY
-
-Örnek:
-
-    mdmerge "/mnt/local/areas/source-docs" "/mnt/local/areas/merged-docs"
-
-Proje içinden doğrudan Python ile çalıştırma:
-
-    uv run python main.py INPUT_DIRECTORY OUTPUT_DIRECTORY
-
-Örnek:
-
-    uv run python main.py \
-      "/mnt/local/areas/source-docs" \
-      "/mnt/local/areas/merged-docs"
-
----
-
-## Komut Seçenekleri
-
-Yardım ekranını açmak için:
-
-    mdmerge --help
-
-Desteklenen seçenekler:
-
-    --token-limit INTEGER
-    --encoding TEXT
-    --output-prefix TEXT
-    --toc-reserve INTEGER
-    --version
-    --help
-
-Özel token sınırıyla çalıştırma:
-
-    mdmerge \
-      "/mnt/local/areas/source-docs" \
-      "/mnt/local/areas/merged-docs" \
-      --token-limit 80000
-
-Özel çıktı adıyla çalıştırma:
-
-    mdmerge \
-      "/mnt/local/areas/source-docs" \
-      "/mnt/local/areas/merged-docs" \
-      --output-prefix Product_Knowledge_Base
-
----
-
-## Kaynak Tarama Davranışı
-
-Verilen giriş klasörünün tamamı özyinelemeli olarak taranır.
-
-Örnek kaynak yapısı:
-
-    source-docs/
-    ├── README.md
-    ├── guides/
-    │   ├── installation.md
-    │   └── configuration.md
-    ├── api/
-    │   └── reference.markdown
-    └── images/
-        └── screenshot.png
-
-Bu yapıda yalnızca aşağıdaki dosyalar işlenir:
-
-    README.md
-    guides/installation.md
-    guides/configuration.md
-    api/reference.markdown
-
-`screenshot.png` ve diğer Markdown dışı dosyalar birleştirmeye dahil edilmez.
-
----
-
-## Çıktı Yapısı
-
-Örnek çıktı klasörü:
-
-    merged-docs/
-    ├── Product_User_Guide_Part_01_of_03.md
-    ├── Product_User_Guide_Part_02_of_03.md
-    ├── Product_User_Guide_Part_03_of_03.md
-    └── merge_manifest.json
-
-Her Markdown çıktı parçası şunları içerir:
-
-- üretim zamanı
-- kullanılan token encoding bilgisi
-- maksimum token sınırı
-- kaynak belge sayısı
-- kaynak segment sayısı
-- içindekiler bölümü
-- açık kaynak başlıkları
-- temizlenmiş Markdown içerikleri
-
-Kaynak bölümü örneği:
-
-    ---
-
-    ## Source: `guides/installation.md`
-
-    <!-- source-path: guides/installation.md -->
-    <!-- source-segment: 1/1 -->
-
-    # Installation
-
-    Document content...
-
----
-
-## Token Bölme Sistemi
-
-Varsayılan token sınırı:
-
-    80000
-
-Varsayılan encoding:
-
-    o200k_base
-
-Proje karakter veya kelime sayısına göre yaklaşık hesap yapmaz. Metni doğrudan `tiktoken` ile encode eder ve gerçek token sayısını kullanır.
-
-Bir kaynak belge tek başına sınırı aşıyorsa güvenli parçalara ayrılır. Son çıktı oluşturulduktan sonra token sayısı tekrar doğrulanır ve sınırı aşan dosyanın yazılmasına izin verilmez.
-
----
-
-## Manifest
-
-Her çalıştırmada aşağıdaki dosya oluşturulur:
-
-    merge_manifest.json
-
-Manifest şunları içerir:
-
-- giriş klasörü
-- çıktı klasörü
-- token encoding
-- token sınırı
-- çalışma istatistikleri
-- çıktı dosyalarının adları
-- her parçanın token sayısı
-- karakter sayıları
-- SHA-256 özetleri
-- kaynak dosya ve segment eşleşmeleri
-- uyarılar
-
----
-
-## Log Sistemi
-
-Her çalışma için ayrı bir zaman damgalı log oluşturulur:
-
-    logs/markdown_merge_YYYY-MM-DD_HH-MM-SS_microseconds.log
-
-Kalite kontrolleri için de ayrı log oluşturulur:
-
-    logs/quality_YYYY-MM-DD_HH-MM-SS.log
-
-Log dosyaları çalışma başlangıcını, işlenen kaynakları, bölme işlemlerini, oluşturulan çıktıları, token sayılarını, hataları ve çalışma süresini içerir.
-
----
-
-## Kalite Kontrolleri
-
-Tüm kalite kontrollerini tek komutla çalıştırın:
-
-    ./quality.sh
-
-Bu komut aşağıdaki kontrolleri uygular:
-
-- Ruff format doğrulaması
-- Ruff lint doğrulaması
-- MyPy strict tip kontrolü
-- Pytest test paketi
-- Coverage kontrolü
-- Global CLI yardım testi
-- Doğrudan Python giriş noktası testi
-
-Kontrolleri ayrı ayrı çalıştırmak için:
-
-    uv run ruff format --check .
-    uv run ruff check .
-    uv run mypy
-    uv run pytest
-
----
-
-## Test Durumu
-
-Proje aşağıdaki alanlar için otomatik testler içerir:
-
-- Markdown temizleme
-- Base64 görsel verisi kaldırma
-- özyinelemeli dosya keşfi
-- Markdown dışı dosyaları dışlama
-- içerik tabanlı akıllı isimlendirme
-- TOC ve kaynak başlığı oluşturma
-- token sınırına göre kaynak bölme
-- uçtan uca merge işlemi
-- manifest oluşturma
-- çıktı token doğrulaması
-
----
-
-## Proje Yapısı
-
-    markdownMerge/
-    ├── main.py
-    ├── pyproject.toml
-    ├── quality.sh
-    ├── README.md
-    ├── src/
-    │   └── markdown_merge/
-    │       ├── __init__.py
-    │       ├── cleaner.py
-    │       ├── cli.py
-    │       ├── config.py
-    │       ├── discovery.py
-    │       ├── logging_setup.py
-    │       ├── models.py
-    │       ├── naming.py
-    │       ├── packer.py
-    │       ├── reader.py
-    │       ├── renderer.py
-    │       ├── service.py
-    │       ├── splitter.py
-    │       ├── tokenizer.py
-    │       ├── ui.py
-    │       └── writer.py
-    └── tests/
-
----
-
-## Kullanım Alanları
-
-- büyük dokümantasyon koleksiyonları
-- yapay zeka dosya hazırlığı
-- RAG veri kaynakları
-- semantik arama
-- embedding üretimi
-- bilgi tabanı birleştirme
-- teknik dokümantasyon arşivleme
-- LLM bağlam dosyaları
-- File Search sistemleri
-
----
-
-
----
-
-Yaptığımız değişiklikler projeyi yalnızca “80K’da böl” mantığından daha akıllı bir Markdown birleştirme sistemine çevirdi; özellikle boş kalan kapasiteyi sonraki kaynaktan güvenli şekilde dolduruyor. Token sınırı hâlâ varsayılan olarak **80.000** ve bunu değiştirmek için artık Python koduna dokunman gerekmiyor.
-
-1. **Pratikte ne değişti?** Önceden 12K stres testinde 51 çıktı oluşuyordu ve bazı ara dosyalar yalnızca `%46–64` doluyordu. Yeni sistem Markdown başlıklarını ve code fence yapılarını dikkate alıyor, kalan kapasiteyi adaptif kullanıyor, `<512` token mikro-parçaları engelliyor; aynı test `51 → 48` dosyaya düştü. 80K gerçek testinde ise 7 dosya çıktı; ilk altısı yaklaşık `%99.98` doldu, en büyüğü `79,992` token oldu ve hiçbir dosya 80K'yı aşmadı.
-
-2. **Şimdiki token sınırı nedir?** Varsayılan sınır **80,000 token**. CLI'da da gördüğün gibi `--token-limit` varsayılanı `80000`.
-
-3. **Token sınırını değiştirmek için tek bir değişkenle uğraşabilir miyim?** Daha iyisi var: **hiçbir Python dosyasını değiştirmene gerek yok.** Çalıştırırken sadece istediğin değeri verirsin:
-
-```bash
-cd "/mnt/local/areas/markdownMerge"
-
-uv run python main.py \
-    INPUT_DIRECTORY \
-    OUTPUT_DIRECTORY \
-    --token-limit 100000
+# ✅ Final Architecture
+
+```
+Markdown Files
+      |
+      v
++----------------+
+| File Discovery |
++----------------+
+      |
+      v
++----------------+
+| Markdown Clean |
++----------------+
+      |
+      v
++----------------+
+| Token Counter  |
+|   tiktoken     |
++----------------+
+      |
+      v
++----------------+
+| Source Segment |
+| 1 file = 1 unit|
++----------------+
+      |
+      v
++----------------+
+| Token Packing  |
+| Smart grouping |
++----------------+
+      |
+      v
++----------------+
+| Output Writer  |
+| Part creation  |
++----------------+
+      |
+      v
++----------------+
+| Manifest JSON  |
++----------------+
 ```
 
-Örneğin tekrar 80K:
+---
 
-```bash
-uv run python main.py INPUT_DIRECTORY OUTPUT_DIRECTORY --token-limit 80000
+# 🎯 Core Behavior
+
+## Before
+
+```
+100 Markdown files
+
+Manual decision:
+    "Split every 10 files"
+    "Split every folder"
+    "Guess size"
+
+Problems:
+    ❌ Uneven token sizes
+    ❌ Manual work
+    ❌ Possible context overflow
+    ❌ Files may be broken
 ```
 
-50K:
+---
 
-```bash
-uv run python main.py INPUT_DIRECTORY OUTPUT_DIRECTORY --token-limit 50000
+## Now
+
+```
+100 Markdown files
+
+User gives:
+
+--token-limit 1500000
+
+
+System calculates:
+
+File 1
++ File 2
++ File 3
++ ...
++ File N
+
+until:
+
+Current tokens + next file > limit
+
+
+Then:
+
+Create new Part
+
+Continue automatically
 ```
 
-120K:
+Result:
 
-```bash
-uv run python main.py INPUT_DIRECTORY OUTPUT_DIRECTORY --token-limit 120000
+```
+Part 01
+├── file001.md
+├── file002.md
+├── file003.md
+└── ...
+
+Part 02
+├── next files
+└── ...
+
+Part 03
+└── ...
 ```
 
-Yani **tek kontrol noktası `--token-limit`**. Splitter, adaptive packer, final validation, manifest ve ekrandaki `% Capacity` hesabı bu değeri otomatik kullanıyor.
+---
+
+# 🔒 File Safety Rules
+
+## Guaranteed
+
+| Feature                         | Status      |
+| ------------------------------- | ----------- |
+| Original Markdown files changed | ❌ Never     |
+| Files deleted                   | ❌ Never     |
+| File content modified           | ❌ Never     |
+| File split into pieces          | ❌ Never     |
+| File moved between parts        | ❌ Never     |
+| Token calculation               | ✅ Exact     |
+| Output optimization             | ✅ Automatic |
+
+---
+
+# 🧠 Token Packing Logic
+
+Example:
+
+User:
+
+```bash
+--token-limit 1500000
+```
+
+System:
+
+```
+File A
+500,000 tokens
+
++
+File B
+400,000 tokens
+
++
+File C
+550,000 tokens
+
+----------------
+
+Total:
+1,450,000 tokens
+
+OK
+Add to Part 1
 
 
+Next file:
+
+200,000 tokens
 
 
-## Lisans
+1,450,000 + 200,000
 
-MIT License.
+= 1,650,000
+
+Too large
+
+
+STOP
+
+Create Part 2
+```
+
+Result:
+
+```
+Part 1
+==========
+File A
+File B
+File C
+
+1,450,000 tokens
+
+
+Part 2
+==========
+File D
+...
+```
+
+---
+
+# 📊 Real Production Test Result
+
+Input:
+
+```
+OpenAI Documentation Dataset
+```
+
+Processed:
+
+| Metric               |      Result |
+| -------------------- | ----------: |
+| Directories scanned  |       1,947 |
+| Markdown files found |      21,966 |
+| Processed files      |      21,966 |
+| Failed files         |           0 |
+| Skipped files        |           0 |
+| Original characters  | 185,142,126 |
+| Cleaned characters   | 184,646,014 |
+| Source tokens        |  47,300,852 |
+| Output tokens        |  49,753,006 |
+| Generated parts      |          36 |
+| Generated segments   |      21,966 |
+| Split files          |           0 |
+| Warnings             |           0 |
+
+---
+
+# 📦 Output Example
+
+Generated:
+
+```
+Openai_Academy_Part_01_of_36.md
+
+Openai_Academy_Part_02_of_36.md
+
+Openai_Academy_Part_03_of_36.md
+
+...
+
+Openai_Academy_Part_36_of_36.md
+```
+
+---
+
+# 📄 Output Structure Example
+
+```markdown
+# Markdown Merge — Part 01
+
+
+## Table of Contents
+
+
+- academy.openai.com/code-of-conduct.md
+- academy.openai.com/resources/team.md
+- ...
+
+
+---
+
+## Source: `academy.openai.com/code-of-conduct.md`
+
+<!-- source-path: academy.openai.com/code-of-conduct.md -->
+
+Markdown content...
+
+
+---
+
+## Source: `academy.openai.com/resources/team.md`
+
+Markdown content...
+```
+
+---
+
+# 🧪 Quality Verification
+
+Final checks:
+
+| Check       | Result   |
+| ----------- | -------- |
+| Ruff format | ✅ Passed |
+| Ruff lint   | ✅ Passed |
+| Mypy strict | ✅ Passed |
+| Pytest      | ✅ Passed |
+| Coverage    | ✅ 86.95% |
+| Smoke test  | ✅ Passed |
+
+---
+
+# 🚀 Usage
+
+## Basic Merge
+
+```bash
+mdmerge ./docs ./output
+```
+
+---
+
+## Token Controlled Merge
+
+```bash
+mdmerge ./docs ./output \
+--token-limit 1500000
+```
+
+Meaning:
+
+```
+Maximum output part size:
+1,500,000 tokens
+```
+
+---
+
+## Custom Encoding
+
+Default:
+
+```
+o200k_base
+```
+
+Example:
+
+```bash
+mdmerge ./docs ./output \
+--encoding o200k_base
+```
+
+---
+
+## Custom Output Name
+
+Example:
+
+```bash
+mdmerge ./docs ./output \
+--output-prefix OpenAI_Docs
+```
+
+Creates:
+
+```
+OpenAI_Docs_Part_01_of_XX.md
+```
+
+---
+
+## Full Example
+
+```bash
+mdmerge \
+/mnt/local/resources/openai/docs/ \
+/mnt/local/resources/openai/_merge/ \
+--token-limit 1500000 \
+--output-prefix Openai_Academy \
+--encoding o200k_base
+```
+
+---
+
+# 📜 Manifest Output
+
+Generated:
+
+```
+merge_manifest.json
+```
+
+Contains:
+
+```json
+{
+  "processed_source_files": 21966,
+  "generated_segments": 21966,
+  "output_parts": 36,
+  "oversized_sources_split": 0
+}
+```
+
+This provides:
+
+* Audit trail
+* Reproducibility
+* File tracking
+* Token statistics
+
+---
+
+# 🏆 Final Project Result
+
+```
+Before:
+
+Manual Markdown merging
+        |
+        v
+Guess file count
+        |
+        v
+Risk of oversized context
+
+
+After:
+
+Markdown Collection
+        |
+        v
+Automatic Discovery
+        |
+        v
+Exact Token Counting
+        |
+        v
+Atomic File Packing
+        |
+        v
+Optimized AI Context Files
+```
+
+## Final Status
+
+```
+markdownMerge v1.0.0
+
+STATUS: PRODUCTION READY ✅
+```
+
+A large documentation collection can now be converted into AI-optimized Markdown context files with one command.
