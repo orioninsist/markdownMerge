@@ -93,3 +93,17 @@ class MergeResult:
     statistics: MergeStatistics
     elapsed_seconds: float
     token_limit: int
+
+
+@dataclass(frozen=True, slots=True)
+class ProgressUpdate:
+    """Structured real-time progress information."""
+
+    stage: str
+    completed: int
+    total: int
+    detail: str = ""
+    current_source: str | None = None
+    current_part: int | None = None
+    current_tokens: int | None = None
+    token_limit: int | None = None

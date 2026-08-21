@@ -32,6 +32,8 @@ def test_render_document_contains_toc_and_source() -> None:
         token_counter=counter,
     )
 
+    assert "# Markdown Merge — Part 1" in result
+    assert "OpenAI Documentation Merge" not in result
     assert "## Table of Contents" in result
     assert "`guide/start.md`" in result
     assert "## Source: `guide/start.md`" in result

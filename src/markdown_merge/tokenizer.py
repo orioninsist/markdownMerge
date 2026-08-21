@@ -33,14 +33,3 @@ class TokenCounter:
     def decode(self, token_ids: Sequence[int]) -> str:
         """Decode token IDs back into text."""
         return self._encoding.decode(list(token_ids))
-
-    def truncate(self, text: str, maximum_tokens: int) -> str:
-        """Return text truncated to at most the requested token count."""
-        if maximum_tokens < 0:
-            raise ValueError("maximum_tokens cannot be negative.")
-
-        token_ids = self.encode(text)
-        if len(token_ids) <= maximum_tokens:
-            return text
-
-        return self.decode(token_ids[:maximum_tokens])

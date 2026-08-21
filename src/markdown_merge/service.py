@@ -13,25 +13,21 @@ from markdown_merge.models import (
     DocumentSegment,
     MergeResult,
     MergeStatistics,
+    ProgressUpdate,
 )
 from markdown_merge.naming import derive_output_prefix
-from markdown_merge.packer import pack_segments_adaptively
+from markdown_merge.packer import pack_segments
 from markdown_merge.reader import read_source_document
 from markdown_merge.splitter import split_source_document
 from markdown_merge.tokenizer import TokenCounter
 from markdown_merge.writer import write_manifest, write_output_parts
 
-ProgressCallback = Callable[[str, int, int, str], None]
+ProgressCallback = Callable[[ProgressUpdate], None]
 
 
-def _noop_progress(
-    stage: str,
-    completed: int,
-    total: int,
-    detail: str,
-) -> None:
+def _noop_progress(update: ProgressUpdate) -> None:
     """Default progress callback."""
-    del stage, completed, total, detail
+    del update
 
 
 class MarkdownMergeService:
@@ -103,10 +99,14 @@ class MarkdownMergeService:
             relative_path = path.relative_to(self._config.input_directory)
 
             progress_callback(
-                "Processing Markdown sources",
-                index - 1,
-                len(files),
-                relative_path.as_posix(),
+                ProgressUpdate(
+                    stage="Processing Markdown sources",
+                    completed=index - 1,
+                    total=len(files),
+                    detail=relative_path.as_posix(),
+                    current_source=relative_path.as_posix(),
+                    token_limit=self._config.token_limit,
+                )
             )
 
             document = read_source_document(
@@ -119,10 +119,14 @@ class MarkdownMergeService:
 
             if document is None:
                 progress_callback(
-                    "Processing Markdown sources",
-                    index,
-                    len(files),
-                    relative_path.as_posix(),
+                    ProgressUpdate(
+                        stage="Processing Markdown sources",
+                        completed=index,
+                        total=len(files),
+                        detail=relative_path.as_posix(),
+                        current_source=relative_path.as_posix(),
+                        token_limit=self._config.token_limit,
+                    )
                 )
                 continue
 
@@ -144,10 +148,14 @@ class MarkdownMergeService:
             all_segments.extend(segments)
 
             progress_callback(
-                "Processing Markdown sources",
-                index,
-                len(files),
-                relative_path.as_posix(),
+                ProgressUpdate(
+                    stage="Processing Markdown sources",
+                    completed=index,
+                    total=len(files),
+                    detail=relative_path.as_posix(),
+                    current_source=relative_path.as_posix(),
+                    token_limit=self._config.token_limit,
+                )
             )
 
         if not all_segments:
@@ -156,25 +164,30 @@ class MarkdownMergeService:
         statistics.generated_segments = len(all_segments)
 
         progress_callback(
-            "Packing token-limited outputs",
-            0,
-            len(all_segments),
-            "Calculating final part boundaries",
+            ProgressUpdate(
+                stage="Packing token-limited outputs",
+                completed=0,
+                total=len(all_segments),
+                detail="Calculating final part boundaries",
+                token_limit=self._config.token_limit,
+            )
         )
 
-        packed_parts = pack_segments_adaptively(
+        packed_parts = pack_segments(
             segments=all_segments,
             token_limit=self._config.token_limit,
             encoding_name=self._config.encoding_name,
             token_counter=self._token_counter,
-            minimum_split_search_tokens=(self._config.minimum_split_search_tokens),
         )
 
         progress_callback(
-            "Writing output parts",
-            0,
-            len(packed_parts),
-            "Creating atomic output files",
+            ProgressUpdate(
+                stage="Writing output parts",
+                completed=0,
+                total=len(packed_parts),
+                detail="Creating atomic output files",
+                token_limit=self._config.token_limit,
+            )
         )
 
         output_parts = write_output_parts(
@@ -184,6 +197,7 @@ class MarkdownMergeService:
             token_limit=self._config.token_limit,
             encoding_name=self._config.encoding_name,
             token_counter=self._token_counter,
+            progress_callback=progress_callback,
         )
 
         for part in output_parts:

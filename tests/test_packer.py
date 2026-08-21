@@ -1,12 +1,11 @@
-"""Tests for exact and adaptive segment packing."""
+"""Tests for ordered whole-segment packing."""
 
 from pathlib import Path
 
+import pytest
+
 from markdown_merge.models import DocumentSegment
-from markdown_merge.packer import (
-    pack_segments,
-    pack_segments_adaptively,
-)
+from markdown_merge.packer import pack_segments
 from markdown_merge.renderer import render_document, render_segment
 from markdown_merge.tokenizer import TokenCounter
 
@@ -36,6 +35,23 @@ def _segment(
     )
 
 
+def _rendered_tokens(
+    counter: TokenCounter,
+    segments: list[DocumentSegment],
+    *,
+    part_number: int,
+    token_limit: int,
+) -> int:
+    rendered = render_document(
+        part_number=part_number,
+        segments=segments,
+        token_limit=token_limit,
+        encoding_name="o200k_base",
+        token_counter=counter,
+    )
+    return counter.count(rendered)
+
+
 def test_empty_segment_list_produces_no_parts() -> None:
     counter = TokenCounter("o200k_base")
 
@@ -49,259 +65,233 @@ def test_empty_segment_list_produces_no_parts() -> None:
         == []
     )
 
-    assert (
-        pack_segments_adaptively(
-            segments=[],
-            token_limit=4_000,
-            encoding_name="o200k_base",
-            token_counter=counter,
-            minimum_split_search_tokens=128,
-        )
-        == []
-    )
 
-
-def test_adaptive_packing_uses_residual_capacity() -> None:
+def test_complete_segments_that_fit_remain_in_same_part() -> None:
     counter = TokenCounter("o200k_base")
 
     segments = [
         _segment(
             counter,
-            "first.md",
+            "001.md",
             1,
             1,
-            "# First\n\n" + ("first tail content " * 850),
+            "# One\n\n" + ("alpha content " * 300),
         ),
         _segment(
             counter,
-            "second.md",
+            "002.md",
             1,
-            2,
-            "## Second A\n\n" + ("second content alpha " * 1_000),
+            1,
+            "# Two\n\n" + ("beta content " * 300),
         ),
         _segment(
             counter,
-            "second.md",
-            2,
-            2,
-            "## Second B\n\n" + ("second content beta " * 1_000),
+            "003.md",
+            1,
+            1,
+            "# Three\n\n" + ("gamma content " * 300),
         ),
+    ]
+
+    token_limit = 100_000
+
+    parts = pack_segments(
+        segments=segments,
+        token_limit=token_limit,
+        encoding_name="o200k_base",
+        token_counter=counter,
+    )
+
+    assert len(parts) == 1
+    assert parts[0] == segments
+
+
+def test_next_complete_segment_moves_entirely_to_next_part_when_it_does_not_fit() -> None:
+    counter = TokenCounter("o200k_base")
+
+    first = _segment(
+        counter,
+        "001.md",
+        1,
+        1,
+        "# One\n\n" + ("alpha content " * 1_000),
+    )
+    second = _segment(
+        counter,
+        "002.md",
+        1,
+        1,
+        "# Two\n\n" + ("beta content " * 1_000),
+    )
+    third = _segment(
+        counter,
+        "003.md",
+        1,
+        1,
+        "# Three\n\n" + ("gamma content " * 1_000),
+    )
+
+    generous_limit = 1_000_000
+
+    two_segment_tokens = _rendered_tokens(
+        counter,
+        [first, second],
+        part_number=1,
+        token_limit=generous_limit,
+    )
+
+    three_segment_tokens = _rendered_tokens(
+        counter,
+        [first, second, third],
+        part_number=1,
+        token_limit=generous_limit,
+    )
+
+    assert three_segment_tokens > two_segment_tokens
+
+    token_limit = three_segment_tokens - 1
+
+    parts = pack_segments(
+        segments=[first, second, third],
+        token_limit=token_limit,
+        encoding_name="o200k_base",
+        token_counter=counter,
+    )
+
+    assert len(parts) == 2
+    assert parts[0] == [first, second]
+    assert parts[1] == [third]
+
+    assert parts[1][0].source_path == Path("003.md")
+    assert parts[1][0].content == third.content
+
+
+def test_packing_preserves_original_source_order() -> None:
+    counter = TokenCounter("o200k_base")
+
+    segments = [
+        _segment(
+            counter,
+            f"{index:03d}.md",
+            1,
+            1,
+            f"# File {index}\n\n" + (f"content {index} " * 700),
+        )
+        for index in range(1, 8)
     ]
 
     token_limit = 4_000
 
-    ordinary = pack_segments(
+    parts = pack_segments(
         segments=segments,
         token_limit=token_limit,
         encoding_name="o200k_base",
         token_counter=counter,
     )
 
-    adaptive = pack_segments_adaptively(
-        segments=segments,
-        token_limit=token_limit,
-        encoding_name="o200k_base",
-        token_counter=counter,
-        minimum_split_search_tokens=128,
-    )
+    flattened = [segment for part in parts for segment in part]
 
-    assert len(adaptive) <= len(ordinary)
-
-    ordinary_first_tokens = counter.count(
-        render_document(
-            part_number=1,
-            segments=ordinary[0],
-            token_limit=token_limit,
-            encoding_name="o200k_base",
-            token_counter=counter,
-        )
-    )
-
-    adaptive_first_tokens = counter.count(
-        render_document(
-            part_number=1,
-            segments=adaptive[0],
-            token_limit=token_limit,
-            encoding_name="o200k_base",
-            token_counter=counter,
-        )
-    )
-
-    assert adaptive_first_tokens >= ordinary_first_tokens
-    assert all(
-        counter.count(
-            render_document(
-                part_number=index,
-                segments=part,
-                token_limit=token_limit,
-                encoding_name="o200k_base",
-                token_counter=counter,
-            )
-        )
-        <= token_limit
-        for index, part in enumerate(adaptive, start=1)
-    )
+    assert flattened == segments
+    assert [segment.source_path for segment in flattened] == [
+        segment.source_path for segment in segments
+    ]
 
 
-def test_adaptive_packing_preserves_source_content_order() -> None:
+def test_packing_never_splits_or_modifies_segment_content() -> None:
     counter = TokenCounter("o200k_base")
+
+    contents = {
+        "001.md": "# One\n\n" + ("alpha text " * 800),
+        "002.md": "# Two\n\n" + ("beta text " * 800),
+        "003.md": "# Three\n\n" + ("gamma text " * 800),
+        "004.md": "# Four\n\n" + ("delta text " * 800),
+    }
 
     segments = [
         _segment(
             counter,
-            "one.md",
+            source_path,
             1,
             1,
-            "# One\n\n" + ("alpha " * 1_500),
-        ),
-        _segment(
-            counter,
-            "two.md",
-            1,
-            1,
-            "# Two\n\n" + ("beta " * 3_500),
-        ),
+            content,
+        )
+        for source_path, content in contents.items()
     ]
 
-    adaptive = pack_segments_adaptively(
-        segments=segments,
-        token_limit=3_000,
-        encoding_name="o200k_base",
-        token_counter=counter,
-        minimum_split_search_tokens=128,
-    )
-
-    flattened = [segment for part in adaptive for segment in part]
-
-    source_paths = [segment.source_path.as_posix() for segment in flattened]
-
-    first_two_position = source_paths.index("two.md")
-
-    assert all(source == "one.md" for source in source_paths[:first_two_position])
-    assert all(source == "two.md" for source in source_paths[first_two_position:])
-
-    assert all(
-        segment.segment_index >= 1 and segment.segment_index <= segment.segment_count
-        for segment in flattened
-    )
-
-
-def test_small_residual_capacity_does_not_force_tiny_split() -> None:
-    counter = TokenCounter("o200k_base")
-
-    segments = [
-        _segment(
-            counter,
-            "one.md",
-            1,
-            1,
-            "# One\n\n" + ("alpha " * 2_700),
-        ),
-        _segment(
-            counter,
-            "two.md",
-            1,
-            1,
-            "# Two\n\n" + ("beta " * 1_000),
-        ),
-    ]
-
-    adaptive = pack_segments_adaptively(
-        segments=segments,
-        token_limit=3_200,
-        encoding_name="o200k_base",
-        token_counter=counter,
-        minimum_split_search_tokens=512,
-    )
-
-    assert adaptive
-    assert all(part for part in adaptive)
-
-
-def test_adaptive_packing_does_not_create_micro_fragments() -> None:
-    counter = TokenCounter("o200k_base")
-    minimum_fragment_tokens = 512
-
-    segments = [
-        _segment(
-            counter,
-            "first.md",
-            1,
-            1,
-            "# First\n\n" + ("first content " * 1_900),
-        ),
-        _segment(
-            counter,
-            "second.md",
-            1,
-            2,
-            "## Second A\n\n" + ("second alpha content " * 1_000),
-        ),
-        _segment(
-            counter,
-            "second.md",
-            2,
-            2,
-            "## Second B\n\n" + ("second beta content " * 1_000),
-        ),
-    ]
-
-    adaptive = pack_segments_adaptively(
+    parts = pack_segments(
         segments=segments,
         token_limit=4_000,
         encoding_name="o200k_base",
         token_counter=counter,
-        minimum_split_search_tokens=minimum_fragment_tokens,
     )
 
-    flattened = [segment for part in adaptive for segment in part]
+    flattened = [segment for part in parts for segment in part]
 
-    for segment in flattened:
-        content_tokens = counter.count(segment.content)
+    assert len(flattened) == len(segments)
 
-        assert content_tokens >= minimum_fragment_tokens
+    for original, packed in zip(segments, flattened, strict=True):
+        assert packed is original
+        assert packed.source_path == original.source_path
+        assert packed.content == original.content
+        assert packed.segment_index == original.segment_index
+        assert packed.segment_count == original.segment_count
 
 
-def test_adaptive_split_keeps_small_remainder_unsplit() -> None:
+def test_every_final_rendered_part_respects_token_limit() -> None:
     counter = TokenCounter("o200k_base")
-    minimum_fragment_tokens = 512
 
-    first = _segment(
-        counter,
-        "one.md",
-        1,
-        1,
-        "# One\n\n" + ("alpha content " * 1_500),
-    )
-
-    second = _segment(
-        counter,
-        "two.md",
-        1,
-        1,
-        "# Two\n\n" + ("beta content " * 1_100),
-    )
-
-    original_second_tokens = counter.count(second.content)
-
-    adaptive = pack_segments_adaptively(
-        segments=[first, second],
-        token_limit=3_200,
-        encoding_name="o200k_base",
-        token_counter=counter,
-        minimum_split_search_tokens=minimum_fragment_tokens,
-    )
-
-    second_segments = [
-        segment for part in adaptive for segment in part if segment.source_path == Path("two.md")
+    segments = [
+        _segment(
+            counter,
+            f"{index:03d}.md",
+            1,
+            1,
+            f"# File {index}\n\n" + (f"documentation {index} " * 700),
+        )
+        for index in range(1, 10)
     ]
 
-    if len(second_segments) > 1:
-        assert all(
-            counter.count(segment.content) >= minimum_fragment_tokens for segment in second_segments
+    token_limit = 4_000
+
+    parts = pack_segments(
+        segments=segments,
+        token_limit=token_limit,
+        encoding_name="o200k_base",
+        token_counter=counter,
+    )
+
+    assert parts
+
+    for part_number, part in enumerate(parts, start=1):
+        rendered = render_document(
+            part_number=part_number,
+            segments=part,
+            token_limit=token_limit,
+            encoding_name="o200k_base",
+            token_counter=counter,
         )
 
-        assert (
-            sum(counter.count(segment.content) for segment in second_segments)
-            >= original_second_tokens - 10
+        assert counter.count(rendered) <= token_limit
+
+
+def test_single_segment_that_cannot_fit_empty_part_raises() -> None:
+    counter = TokenCounter("o200k_base")
+
+    segment = _segment(
+        counter,
+        "oversized.md",
+        1,
+        1,
+        "# Oversized\n\n" + ("very large content " * 2_000),
+    )
+
+    with pytest.raises(
+        RuntimeError,
+        match="Single source segment exceeds token limit",
+    ):
+        pack_segments(
+            segments=[segment],
+            token_limit=1,
+            encoding_name="o200k_base",
+            token_counter=counter,
         )

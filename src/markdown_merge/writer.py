@@ -7,6 +7,7 @@ import json
 import os
 import re
 import tempfile
+from collections.abc import Callable
 from contextlib import suppress
 from datetime import datetime
 from pathlib import Path
@@ -16,12 +17,21 @@ from markdown_merge.models import (
     DocumentSegment,
     MergeStatistics,
     OutputPart,
+    ProgressUpdate,
 )
 from markdown_merge.renderer import render_document
 from markdown_merge.tokenizer import TokenCounter
 
+WriterProgressCallback = Callable[[ProgressUpdate], None]
+
+
+def _noop_progress(update: ProgressUpdate) -> None:
+    """Default writer progress callback."""
+    del update
+
+
 _GENERATED_PART_PATTERN = re.compile(
-    r"^.+_Part_\\d+_of_\\d+\\.md$",
+    r"^.+_Part_\d+_of_\d+\.md$",
     flags=re.IGNORECASE,
 )
 
@@ -82,6 +92,7 @@ def write_output_parts(
     token_limit: int,
     encoding_name: str,
     token_counter: TokenCounter,
+    progress_callback: WriterProgressCallback = _noop_progress,
 ) -> list[OutputPart]:
     """Render and atomically write all merged output parts."""
     output_directory.mkdir(parents=True, exist_ok=True)
@@ -94,6 +105,17 @@ def write_output_parts(
     for part_number, segments in enumerate(packed_parts, start=1):
         filename = f"{output_prefix}_Part_{part_number:0{width}d}_of_{total_parts:0{width}d}.md"
         path = output_directory / filename
+
+        progress_callback(
+            ProgressUpdate(
+                stage="Writing output parts",
+                completed=part_number - 1,
+                total=total_parts,
+                detail=filename,
+                current_part=part_number,
+                token_limit=token_limit,
+            )
+        )
 
         document = render_document(
             part_number=part_number,
@@ -120,6 +142,18 @@ def write_output_parts(
                 character_count=len(document),
                 segments=tuple(segments),
                 sha256=_sha256(document),
+            )
+        )
+
+        progress_callback(
+            ProgressUpdate(
+                stage="Writing output parts",
+                completed=part_number,
+                total=total_parts,
+                detail=filename,
+                current_part=part_number,
+                current_tokens=token_count,
+                token_limit=token_limit,
             )
         )
 

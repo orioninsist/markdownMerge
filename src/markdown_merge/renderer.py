@@ -9,6 +9,42 @@ from markdown_merge.models import DocumentSegment
 from markdown_merge.tokenizer import TokenCounter
 
 
+def calculate_reserve_tokens(
+    segments: list[DocumentSegment],
+    token_counter: TokenCounter,
+) -> int:
+    """Calculate generated Markdown overhead tokens."""
+    header = (
+        "# Markdown Merge — Part 1\n\n"
+        "- Generated: `2026-01-01T00:00:00+00:00`\n"
+        "- Token encoding: `o200k_base`\n"
+        "- Maximum tokens per part: `1,500,000`\n"
+        f"- Source documents represented: `{len({segment.source_path for segment in segments})}`\n"
+        f"- Source segments represented: `{len(segments)}`\n\n"
+    )
+
+    toc_lines = ["## Table of Contents", ""]
+
+    for segment in segments:
+        display_name = segment.display_name
+        anchor = slugify_markdown_anchor(f"source-{display_name}")
+        toc_lines.append(f"- [`{display_name}`](#{anchor})")
+
+    toc = "\n".join(toc_lines) + "\n\n"
+
+    separator = "".join(
+        (
+            "\n---\n\n"
+            f"## Source: `{segment.display_name}`\n\n"
+            f"<!-- source-path: {segment.source_path.as_posix()} -->\n"
+            f"<!-- source-segment: {segment.segment_index}/{segment.segment_count} -->\n\n"
+        )
+        for segment in segments
+    )
+
+    return token_counter.count(header + toc + separator)
+
+
 def slugify_markdown_anchor(value: str) -> str:
     """Create a GitHub-compatible approximate Markdown anchor."""
     anchor = value.strip().casefold()
@@ -74,7 +110,7 @@ def render_document(
     unique_sources = len({segment.source_path for segment in segments})
 
     header = (
-        f"# OpenAI Documentation Merge — Part {part_number}\n\n"
+        f"# Markdown Merge — Part {part_number}\n\n"
         f"- Generated: `{generated_at}`\n"
         f"- Token encoding: `{encoding_name}`\n"
         f"- Maximum tokens per part: `{token_limit:,}`\n"
@@ -86,8 +122,5 @@ def render_document(
     body = "".join(segment.rendered_content for segment in segments)
 
     document = f"{header}{toc}\n{body}".strip() + "\n"
-
-    if token_counter.count(document) > token_limit:
-        raise RuntimeError("Rendered document exceeded the configured token limit.")
 
     return document

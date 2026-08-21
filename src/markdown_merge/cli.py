@@ -9,12 +9,34 @@ import click
 
 from markdown_merge.config import MergeConfig
 from markdown_merge.logging_setup import configure_logging
+from markdown_merge.models import ProgressUpdate
 from markdown_merge.service import MarkdownMergeService
 from markdown_merge.ui import (
-    MergeProgressUI,
     display_failure,
     display_result,
 )
+
+
+def terminal_progress(update: ProgressUpdate) -> None:
+    """Print stable terminal progress lines."""
+    parts = [
+        update.stage,
+        f"{update.completed}/{update.total}",
+    ]
+
+    if update.current_source:
+        parts.append(update.current_source)
+
+    if update.current_part is not None:
+        parts.append(f"part={update.current_part}")
+
+    if update.current_tokens is not None:
+        parts.append(f"tokens={update.current_tokens:,}")
+
+    if update.detail:
+        parts.append(update.detail)
+
+    print(" | ".join(parts), flush=True)
 
 
 def _project_root() -> Path:
@@ -32,7 +54,13 @@ def _project_root() -> Path:
     context_settings={
         "help_option_names": ["-h", "--help"],
         "show_default": True,
-    }
+    },
+    epilog="""Examples:
+
+  mdmerge ./docs ./output
+
+  mdmerge ./docs ./output --token-limit 250000
+""",
 )
 @click.argument(
     "input_directory",
@@ -59,27 +87,27 @@ def _project_root() -> Path:
     "--token-limit",
     type=click.IntRange(min=1_000),
     default=80_000,
-    help="Maximum exact tiktoken count for each output part.",
+    help="Maximum token count allowed for each generated Markdown file.",
 )
 @click.option(
     "--encoding",
     "encoding_name",
     default="o200k_base",
-    help="tiktoken encoding used for exact token counting.",
+    help="tiktoken encoding used for exact token counting. Usually does not need to be changed.",
 )
 @click.option(
     "--output-prefix",
     default=None,
     help=(
-        "Optional filename prefix. When omitted, Markdown headings and "
-        "content are analyzed automatically."
+        "Filename prefix for generated files. When omitted, a prefix is "
+        "derived automatically from Markdown headings and content."
     ),
 )
 @click.option(
     "--toc-reserve",
     type=click.IntRange(min=100),
     default=2_000,
-    help="Token budget reserved while splitting sources for TOC metadata.",
+    help="Tokens reserved for generated headings and table-of-contents metadata.",
 )
 @click.version_option(package_name="markdown-merge")
 def main(
@@ -90,7 +118,7 @@ def main(
     output_prefix: str | None,
     toc_reserve: int,
 ) -> None:
-    """Recursively clean, merge, and token-split Markdown documents."""
+    """Recursively clean, merge, and intelligently split Markdown documents."""
     project_root = _project_root()
     logger: logging.Logger | None = None
     log_path: Path | None = None
@@ -114,13 +142,7 @@ def main(
             log_path=log_path,
         )
 
-        with MergeProgressUI(
-            input_directory=input_directory,
-            output_directory=output_directory,
-            token_limit=token_limit,
-            encoding_name=encoding_name,
-        ) as progress_ui:
-            result = service.execute(progress_callback=progress_ui.update)
+        result = service.execute(progress_callback=terminal_progress)
 
         display_result(result)
 

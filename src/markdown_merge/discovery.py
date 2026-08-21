@@ -5,7 +5,6 @@ from __future__ import annotations
 import logging
 import os
 import re
-from collections.abc import Iterable
 from pathlib import Path
 
 from markdown_merge.models import MergeStatistics
@@ -104,10 +103,3 @@ def discover_markdown_files(
         input_directory,
     )
     return discovered
-
-
-def iter_parent_topics(relative_path: Path) -> Iterable[str]:
-    """Yield normalized topic components for future grouping extensions."""
-    for part in relative_path.parent.parts:
-        if part not in {".", ""}:
-            yield part.casefold()

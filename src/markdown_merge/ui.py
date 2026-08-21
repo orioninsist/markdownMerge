@@ -21,7 +21,7 @@ from rich.progress import (
 from rich.table import Table
 from rich.text import Text
 
-from markdown_merge.models import MergeResult
+from markdown_merge.models import MergeResult, ProgressUpdate
 
 console = Console()
 
@@ -96,15 +96,33 @@ class MergeProgressUI(AbstractContextManager["MergeProgressUI"]):
             traceback,
         )
 
-    def update(
-        self,
-        stage: str,
-        completed: int,
-        total: int,
-        detail: str,
-    ) -> None:
+    def update(self, update: ProgressUpdate) -> None:
         """Create or update the active progress task."""
-        safe_total = max(total, 1)
+        stage = update.stage
+        completed = update.completed
+        safe_total = max(update.total, 1)
+
+        detail_parts: list[str] = []
+
+        if update.current_source:
+            detail_parts.append(update.current_source)
+        elif update.detail:
+            detail_parts.append(update.detail)
+
+        if update.current_part is not None:
+            detail_parts.append(f"part {update.current_part}")
+
+        if (
+            update.current_tokens is not None
+            and update.token_limit is not None
+            and update.token_limit > 0
+        ):
+            capacity = update.current_tokens / update.token_limit * 100
+            detail_parts.append(
+                f"{update.current_tokens:,}/{update.token_limit:,} tokens ({capacity:.1f}%)"
+            )
+
+        detail = " | ".join(detail_parts) or update.detail
 
         if self._task_id is None:
             self._task_id = self._progress.add_task(
