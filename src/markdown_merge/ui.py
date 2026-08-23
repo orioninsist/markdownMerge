@@ -162,6 +162,35 @@ def display_result(result: MergeResult) -> None:
     """Display a complete execution summary."""
     statistics = result.statistics
 
+    completion = Table(
+        title="DOCSYNC Markdown Merge",
+        show_header=False,
+        border_style="green",
+    )
+    completion.add_column("Metric")
+    completion.add_column("Value", justify="right")
+
+    completion.add_row(
+        "Status",
+        "✓ Merge completed successfully",
+    )
+    completion.add_row(
+        "Duration",
+        f"{result.elapsed_seconds:.2f} seconds",
+    )
+    completion.add_row(
+        "Markdown sources",
+        _number(statistics.processed_source_files),
+    )
+    completion.add_row(
+        "Output parts",
+        _number(statistics.output_parts),
+    )
+    completion.add_row(
+        "Final tokens",
+        _number(statistics.output_tokens),
+    )
+
     summary = Table(
         title="Project Statistics",
         show_header=True,
@@ -242,13 +271,16 @@ def display_result(result: MergeResult) -> None:
     parts.add_column("SHA-256", overflow="fold")
 
     for part in result.output_parts:
-        capacity = part.token_count / result.token_limit * 100
+        if result.token_limit is not None:
+            capacity_text = f"{part.token_count / result.token_limit * 100:.2f}%"
+        else:
+            capacity_text = "unlimited"
 
         parts.add_row(
             str(part.part_number),
             part.filename,
             _number(part.token_count),
-            f"{capacity:.2f}%",
+            capacity_text,
             _number(len(part.segments)),
             part.sha256[:16],
         )
@@ -269,6 +301,8 @@ def display_result(result: MergeResult) -> None:
         str(result.log_path),
     )
 
+    console.print()
+    console.print(completion)
     console.print()
     console.print(summary)
     console.print()

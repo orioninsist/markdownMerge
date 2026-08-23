@@ -92,7 +92,7 @@ class MergeResult:
     log_path: Path
     statistics: MergeStatistics
     elapsed_seconds: float
-    token_limit: int
+    token_limit: int | None
 
 
 @dataclass(frozen=True, slots=True)
@@ -107,3 +107,6 @@ class ProgressUpdate:
     current_part: int | None = None
     current_tokens: int | None = None
     token_limit: int | None = None
+    elapsed_seconds: float | None = None
+    items_per_second: float | None = None
+    eta_seconds: float | None = None

@@ -24,10 +24,65 @@ from markdown_merge.writer import write_manifest, write_output_parts
 
 ProgressCallback = Callable[[ProgressUpdate], None]
 
+DEFAULT_SOURCE_SEGMENT_TOKENS = 80_000
+DEFAULT_OUTPUT_PART_TOKENS = 250_000
+
 
 def _noop_progress(update: ProgressUpdate) -> None:
     """Default progress callback."""
     del update
+
+
+def _runtime_progress(
+    started_at: float,
+    completed: int,
+    total: int,
+) -> tuple[float, float | None, float | None]:
+    """Calculate elapsed time, speed, and ETA."""
+    elapsed = perf_counter() - started_at
+
+    if elapsed <= 0 or completed <= 0:
+        return elapsed, None, None
+
+    speed = completed / elapsed
+    remaining = max(total - completed, 0)
+
+    eta = remaining / speed if speed > 0 else None
+
+    return elapsed, speed, eta
+
+
+def _make_progress(
+    started_at: float,
+    stage: str,
+    completed: int,
+    total: int,
+    detail: str = "",
+    current_source: str | None = None,
+    current_part: int | None = None,
+    current_tokens: int | None = None,
+    token_limit: int | None = None,
+) -> ProgressUpdate:
+    """Create progress updates with runtime information."""
+    elapsed, speed, eta = _runtime_progress(
+        started_at,
+        completed,
+        total,
+    )
+
+    return ProgressUpdate(
+        stage=stage,
+        completed=completed,
+        total=total,
+        detail=detail,
+        current_source=current_source,
+        current_part=current_part,
+        current_tokens=current_tokens,
+        token_limit=token_limit,
+        elapsed_seconds=elapsed,
+        items_per_second=speed,
+        eta_seconds=eta,
+    )
 
 
 class MarkdownMergeService:
@@ -93,13 +148,18 @@ class MarkdownMergeService:
         )
 
         all_segments: list[DocumentSegment] = []
-        segment_budget = self._config.token_limit - self._config.toc_reserve_tokens
+        segment_budget = (
+            self._config.token_limit - self._config.toc_reserve_tokens
+            if self._config.token_limit is not None
+            else DEFAULT_SOURCE_SEGMENT_TOKENS
+        )
 
         for index, path in enumerate(files, start=1):
             relative_path = path.relative_to(self._config.input_directory)
 
             progress_callback(
-                ProgressUpdate(
+                _make_progress(
+                    started_at=started_at,
                     stage="Processing Markdown sources",
                     completed=index - 1,
                     total=len(files),
@@ -119,7 +179,8 @@ class MarkdownMergeService:
 
             if document is None:
                 progress_callback(
-                    ProgressUpdate(
+                    _make_progress(
+                        started_at=started_at,
                         stage="Processing Markdown sources",
                         completed=index,
                         total=len(files),
@@ -130,12 +191,24 @@ class MarkdownMergeService:
                 )
                 continue
 
-            segments = split_source_document(
-                document=document,
-                token_budget=segment_budget,
-                token_counter=self._token_counter,
-                minimum_split_search_tokens=(self._config.minimum_split_search_tokens),
-            )
+            if segment_budget is None:
+                segments = [
+                    DocumentSegment(
+                        source_path=document.relative_path,
+                        segment_index=1,
+                        segment_count=1,
+                        content=document.content,
+                        rendered_content=document.content,
+                        token_count=document.content_tokens,
+                    )
+                ]
+            else:
+                segments = split_source_document(
+                    document=document,
+                    token_budget=segment_budget,
+                    token_counter=self._token_counter,
+                    minimum_split_search_tokens=(self._config.minimum_split_search_tokens),
+                )
 
             if len(segments) > 1:
                 statistics.oversized_sources_split += 1
@@ -148,7 +221,8 @@ class MarkdownMergeService:
             all_segments.extend(segments)
 
             progress_callback(
-                ProgressUpdate(
+                _make_progress(
+                    started_at=started_at,
                     stage="Processing Markdown sources",
                     completed=index,
                     total=len(files),
@@ -164,7 +238,8 @@ class MarkdownMergeService:
         statistics.generated_segments = len(all_segments)
 
         progress_callback(
-            ProgressUpdate(
+            _make_progress(
+                started_at=started_at,
                 stage="Packing token-limited outputs",
                 completed=0,
                 total=len(all_segments),
@@ -173,15 +248,29 @@ class MarkdownMergeService:
             )
         )
 
+        output_token_limit = (
+            self._config.token_limit
+            if self._config.token_limit is not None
+            else DEFAULT_OUTPUT_PART_TOKENS
+        )
+
+        if self._config.token_limit is None:
+            self._logger.info(
+                "Using automatic output token limit=%d",
+                output_token_limit,
+            )
+
         packed_parts = pack_segments(
             segments=all_segments,
-            token_limit=self._config.token_limit,
+            token_limit=output_token_limit,
             encoding_name=self._config.encoding_name,
             token_counter=self._token_counter,
+            progress_callback=progress_callback,
         )
 
         progress_callback(
-            ProgressUpdate(
+            _make_progress(
+                started_at=started_at,
                 stage="Writing output parts",
                 completed=0,
                 total=len(packed_parts),

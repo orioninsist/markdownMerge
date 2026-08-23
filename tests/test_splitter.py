@@ -58,17 +58,16 @@ def test_source_document_preserves_full_content() -> None:
     assert segments[0].content == content
 
 
-def test_source_document_rejects_file_larger_than_budget() -> None:
+def test_source_document_splits_file_larger_than_budget() -> None:
     content = "# Large\n\n" + ("token " * 10_000)
 
     document, counter = _document(content)
 
-    with pytest.raises(
-        RuntimeError,
-        match="Source file exceeds token budget without splitting",
-    ):
-        split_source_document(
-            document=document,
-            token_budget=1000,
-            token_counter=counter,
-        )
+    segments = split_source_document(
+        document=document,
+        token_budget=1000,
+        token_counter=counter,
+    )
+
+    assert len(segments) > 1
+    assert "".join(segment.content for segment in segments) == content

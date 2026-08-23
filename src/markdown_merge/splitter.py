@@ -1,4 +1,4 @@
-"""Source-level segmentation without modifying Markdown content."""
+"""Source document splitting utilities."""
 
 from __future__ import annotations
 
@@ -13,35 +13,74 @@ def split_source_document(
     token_counter: TokenCounter,
     minimum_split_search_tokens: int = 512,
 ) -> list[DocumentSegment]:
-    """
-    Keep each source document atomic.
+    """Split oversized source documents into token-safe segments."""
 
-    Files are never split internally.
-    Token limits are handled by the packer between files.
-    """
     del minimum_split_search_tokens
 
-    rendered = render_segment(
+    full_rendered = render_segment(
         source_path=document.relative_path,
         segment_index=1,
         segment_count=1,
         content=document.content,
     )
 
-    token_count = token_counter.count(rendered)
+    full_tokens = token_counter.count(full_rendered)
 
-    if token_count > token_budget:
-        raise RuntimeError(
-            f"Source file exceeds token budget without splitting: {document.relative_path}"
-        )
+    if full_tokens <= token_budget:
+        return [
+            DocumentSegment(
+                source_path=document.relative_path,
+                segment_index=1,
+                segment_count=1,
+                content=document.content,
+                rendered_content=full_rendered,
+                token_count=full_tokens,
+            )
+        ]
 
-    return [
-        DocumentSegment(
+    safe_budget = int(token_budget * 0.90)
+
+    chunks: list[str] = []
+    current: list[str] = []
+    current_tokens = 0
+
+    lines = document.content.splitlines(keepends=True)
+
+    for line in lines:
+        line_tokens = token_counter.count(line + "\n")
+
+        if current and current_tokens + line_tokens > safe_budget:
+            chunks.append("".join(current))
+            current = []
+            current_tokens = 0
+
+        current.append(line)
+        current_tokens += line_tokens
+
+    if current:
+        chunks.append("".join(current))
+
+    segments: list[DocumentSegment] = []
+
+    total = len(chunks)
+
+    for index, chunk in enumerate(chunks, start=1):
+        rendered = render_segment(
             source_path=document.relative_path,
-            segment_index=1,
-            segment_count=1,
-            content=document.content,
-            rendered_content=rendered,
-            token_count=token_count,
+            segment_index=index,
+            segment_count=total,
+            content=chunk,
         )
-    ]
+
+        segments.append(
+            DocumentSegment(
+                source_path=document.relative_path,
+                segment_index=index,
+                segment_count=total,
+                content=chunk,
+                rendered_content=rendered,
+                token_count=token_counter.count(rendered),
+            )
+        )
+
+    return segments

@@ -101,7 +101,7 @@ def render_toc(segments: list[DocumentSegment]) -> str:
 def render_document(
     part_number: int,
     segments: list[DocumentSegment],
-    token_limit: int,
+    token_limit: int | None,
     encoding_name: str,
     token_counter: TokenCounter,
 ) -> str:
@@ -109,11 +109,17 @@ def render_document(
     generated_at = datetime.now().astimezone().isoformat(timespec="seconds")
     unique_sources = len({segment.source_path for segment in segments})
 
+    token_line = (
+        f"- Maximum tokens per part: `{token_limit:,}`\n"
+        if token_limit is not None
+        else "- Maximum tokens per part: `unlimited`\n"
+    )
+
     header = (
         f"# Markdown Merge — Part {part_number}\n\n"
         f"- Generated: `{generated_at}`\n"
         f"- Token encoding: `{encoding_name}`\n"
-        f"- Maximum tokens per part: `{token_limit:,}`\n"
+        f"{token_line}"
         f"- Source documents represented: `{unique_sources:,}`\n"
         f"- Source segments represented: `{len(segments):,}`\n\n"
     )

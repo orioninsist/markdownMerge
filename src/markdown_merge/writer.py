@@ -89,7 +89,7 @@ def write_output_parts(
     packed_parts: list[list[DocumentSegment]],
     output_directory: Path,
     output_prefix: str,
-    token_limit: int,
+    token_limit: int | None,
     encoding_name: str,
     token_counter: TokenCounter,
     progress_callback: WriterProgressCallback = _noop_progress,
@@ -126,7 +126,7 @@ def write_output_parts(
         )
         token_count = token_counter.count(document)
 
-        if token_count > token_limit:
+        if token_limit is not None and token_count > token_limit:
             raise RuntimeError(
                 f"Refusing to write {filename}: {token_count:,} tokens exceeds {token_limit:,}."
             )
@@ -165,7 +165,7 @@ def write_manifest(
     input_directory: Path,
     output_parts: list[OutputPart],
     statistics: MergeStatistics,
-    token_limit: int,
+    token_limit: int | None,
     encoding_name: str,
 ) -> Path:
     """Write a JSON manifest describing every output and source mapping."""

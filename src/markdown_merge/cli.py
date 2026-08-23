@@ -18,25 +18,99 @@ from markdown_merge.ui import (
 
 
 def terminal_progress(update: ProgressUpdate) -> None:
-    """Print stable terminal progress lines."""
-    parts = [
-        update.stage,
-        f"{update.completed}/{update.total}",
+    """Render a fixed terminal progress dashboard."""
+    import sys
+
+    lines = [
+        "DOCSYNC Markdown Merge",
+        "",
+        "Phase:",
+        f"  {update.stage}",
+        "",
+        "Progress:",
+        f"  {update.completed:,} / {update.total:,}",
+        "",
     ]
 
     if update.current_source:
-        parts.append(update.current_source)
+        lines.extend(
+            [
+                "Current file:",
+                f"  {update.current_source}",
+                "",
+            ]
+        )
 
     if update.current_part is not None:
-        parts.append(f"part={update.current_part}")
+        lines.extend(
+            [
+                "Current part:",
+                f"  {update.current_part}",
+                "",
+            ]
+        )
 
     if update.current_tokens is not None:
-        parts.append(f"tokens={update.current_tokens:,}")
+        if update.token_limit is not None:
+            token_text = f"{update.current_tokens:,} / {update.token_limit:,}"
+        else:
+            token_text = f"{update.current_tokens:,}"
+
+        lines.extend(
+            [
+                "Tokens:",
+                f"  {token_text}",
+                "",
+            ]
+        )
+
+    if update.elapsed_seconds is not None:
+        total_seconds = int(update.elapsed_seconds)
+        hours, remainder = divmod(total_seconds, 3600)
+        minutes, seconds = divmod(remainder, 60)
+
+        lines.extend(
+            [
+                "Elapsed:",
+                f"  {hours:02d}:{minutes:02d}:{seconds:02d}",
+                "",
+            ]
+        )
+
+    if update.items_per_second is not None:
+        lines.extend(
+            [
+                "Speed:",
+                f"  {update.items_per_second:.2f} items/sec",
+                "",
+            ]
+        )
+
+    if update.eta_seconds is not None:
+        total_seconds = int(update.eta_seconds)
+        hours, remainder = divmod(total_seconds, 3600)
+        minutes, seconds = divmod(remainder, 60)
+
+        lines.extend(
+            [
+                "ETA:",
+                f"  {hours:02d}:{minutes:02d}:{seconds:02d}",
+                "",
+            ]
+        )
 
     if update.detail:
-        parts.append(update.detail)
+        lines.extend(
+            [
+                "Detail:",
+                f"  {update.detail}",
+                "",
+            ]
+        )
 
-    print(" | ".join(parts), flush=True)
+    sys.stdout.write("\033[H\033[J")
+    sys.stdout.write("\n".join(lines))
+    sys.stdout.flush()
 
 
 def _project_root() -> Path:
@@ -86,7 +160,7 @@ def _project_root() -> Path:
 @click.option(
     "--token-limit",
     type=click.IntRange(min=1_000),
-    default=80_000,
+    default=None,
     help="Maximum token count allowed for each generated Markdown file.",
 )
 @click.option(
@@ -113,7 +187,7 @@ def _project_root() -> Path:
 def main(
     input_directory: Path,
     output_directory: Path,
-    token_limit: int,
+    token_limit: int | None,
     encoding_name: str,
     output_prefix: str | None,
     toc_reserve: int,
