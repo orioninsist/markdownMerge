@@ -103,3 +103,4 @@ Desktop.ini
 # Temporary files
 *.tmp
 *.temp
+src/markdown_merge/*.progress_backup
