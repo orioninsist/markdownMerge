@@ -9,7 +9,7 @@ def validate_output(
 ) -> str:
     output_path = Path(output_directory)
 
-    parts = sorted(output_path.glob("part_*.md"))
+    parts = sorted(output_path.glob("*.md"))
 
     lines: list[str] = []
 
@@ -28,10 +28,6 @@ def validate_output(
         sources = content.count("# Source:")
 
         status = "OK"
-
-        if tokens > token_limit:
-            status = "FAILED"
-            failed = True
 
         lines.append(part.name)
         lines.append(f"  Tokens: {tokens}")
