@@ -14,9 +14,7 @@ def write_parts(parts: list[Part], output_directory: str) -> list[Path]:
 
         with file_path.open("w", encoding="utf-8") as output:
             for file_chunk in part.files:
-                output.write(
-                    f"# Source: {file_chunk.path.name}\n\n"
-                )
+                output.write(f"# Source: {file_chunk.path.name}\n\n")
                 output.write(file_chunk.content)
                 output.write("\n\n")
 

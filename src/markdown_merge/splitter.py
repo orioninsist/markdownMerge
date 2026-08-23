@@ -33,18 +33,14 @@ def split_files(
     total_files = len(files)
 
     for index, file_path in enumerate(files, start=1):
-        print(
-            f"[{index}/{total_files}] processing {file_path.name}"
-        )
+        print(f"[{index}/{total_files}] processing {file_path.name}")
 
         content = file_path.read_text(encoding="utf-8")
 
         source_header = f"# Source: {file_path.name}\n\n"
 
         file_tokens = (
-            count_tokens(source_header)
-            + count_tokens(content)
-            + count_tokens("\n\n")
+            count_tokens(source_header) + count_tokens(content) + count_tokens("\n\n")
         )
 
         if current_files and current_tokens + file_tokens > effective_limit:
