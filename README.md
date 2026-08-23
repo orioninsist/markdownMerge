@@ -1,449 +1,285 @@
-# 🚀 Project Overview
+# markdownMerge
 
-**markdownMerge** is now a production-ready Markdown processing and merging system designed for very large documentation collections.
+A token-aware Markdown merge tool designed to combine thousands of Markdown files into optimized output parts without modifying the original Markdown content.
 
-The system reads thousands of Markdown files, cleans them, preserves file boundaries, calculates exact tokens using **tiktoken**, and automatically creates optimized output parts based on a user-defined token limit.
-
-The key design principle:
-
-> **Files are never manually split or modified. The system only decides where a new output part starts based on token capacity.**
+The project is built for large documentation datasets such as OpenAI documentation exports. It keeps every source file complete, calculates exact token usage with `tiktoken`, and splits the final merged output according to a user-defined token limit.
 
 ---
 
-# ✅ Final Architecture
+# Features
+
+| Feature | Description |
+|---|---|
+| Markdown Scanner | Recursively finds all `.md` files from an input directory |
+| File Preservation | Original Markdown content is kept unchanged |
+| Source Tracking | Adds a source marker before every merged file |
+| Token Counting | Uses `tiktoken` for accurate token calculation |
+| Smart Splitting | Splits output only between files, never inside a file |
+| Token Safety | Keeps generated parts below the requested token limit |
+| Validation | Checks every generated part after writing |
+| Summary Report | Creates a complete merge summary |
+
+---
+
+# Architecture
 
 ```
+
 Markdown Files
-      |
-      v
-+----------------+
-| File Discovery |
-+----------------+
-      |
-      v
-+----------------+
-| Markdown Clean |
-+----------------+
-      |
-      v
-+----------------+
-| Token Counter  |
-|   tiktoken     |
-+----------------+
-      |
-      v
-+----------------+
-| Source Segment |
-| 1 file = 1 unit|
-+----------------+
-      |
-      v
-+----------------+
-| Token Packing  |
-| Smart grouping |
-+----------------+
-      |
-      v
-+----------------+
-| Output Writer  |
-| Part creation  |
-+----------------+
-      |
-      v
-+----------------+
-| Manifest JSON  |
-+----------------+
+|
+v
++-------------+
+|  scanner.py |
++-------------+
+|
+v
++---------------+
+| tokenizer.py  |
++---------------+
+|
+v
++---------------+
+| splitter.py   |
++---------------+
+|
+v
++-------------+
+| writer.py   |
++-------------+
+|
+v
++--------------+
+| validator.py |
++--------------+
+|
+v
+Merged Markdown Parts
+
+````
+
+---
+
+# Installation
+
+Clone the repository:
+
+```bash
+git clone <repository-url>
+cd markdownMerge
+````
+
+Install dependencies:
+
+```bash
+uv sync
+```
+
+Install the command line tool:
+
+```bash
+uv tool install --editable .
+```
+
+Verify installation:
+
+```bash
+mdmerge --help
 ```
 
 ---
 
-# 🎯 Core Behavior
+# Basic Usage
 
-## Before
-
+```bash
+mdmerge INPUT_DIRECTORY OUTPUT_DIRECTORY --token-limit TOKEN_LIMIT
 ```
-100 Markdown files
-
-Manual decision:
-    "Split every 10 files"
-    "Split every folder"
-    "Guess size"
-
-Problems:
-    ❌ Uneven token sizes
-    ❌ Manual work
-    ❌ Possible context overflow
-    ❌ Files may be broken
-```
-
----
-
-## Now
-
-```
-100 Markdown files
-
-User gives:
-
---token-limit 1500000
-
-
-System calculates:
-
-File 1
-+ File 2
-+ File 3
-+ ...
-+ File N
-
-until:
-
-Current tokens + next file > limit
-
-
-Then:
-
-Create new Part
-
-Continue automatically
-```
-
-Result:
-
-```
-Part 01
-├── file001.md
-├── file002.md
-├── file003.md
-└── ...
-
-Part 02
-├── next files
-└── ...
-
-Part 03
-└── ...
-```
-
----
-
-# 🔒 File Safety Rules
-
-## Guaranteed
-
-| Feature                         | Status      |
-| ------------------------------- | ----------- |
-| Original Markdown files changed | ❌ Never     |
-| Files deleted                   | ❌ Never     |
-| File content modified           | ❌ Never     |
-| File split into pieces          | ❌ Never     |
-| File moved between parts        | ❌ Never     |
-| Token calculation               | ✅ Exact     |
-| Output optimization             | ✅ Automatic |
-
----
-
-# 🧠 Token Packing Logic
 
 Example:
 
-User:
-
 ```bash
---token-limit 1500000
+mdmerge ./docs ./merged --token-limit 1500000
 ```
 
-System:
+This command:
 
-```
-File A
-500,000 tokens
-
-+
-File B
-400,000 tokens
-
-+
-File C
-550,000 tokens
-
-----------------
-
-Total:
-1,450,000 tokens
-
-OK
-Add to Part 1
-
-
-Next file:
-
-200,000 tokens
-
-
-1,450,000 + 200,000
-
-= 1,650,000
-
-Too large
-
-
-STOP
-
-Create Part 2
-```
-
-Result:
-
-```
-Part 1
-==========
-File A
-File B
-File C
-
-1,450,000 tokens
-
-
-Part 2
-==========
-File D
-...
-```
+1. Finds all Markdown files inside `./docs`
+2. Counts tokens for every file
+3. Groups files into parts
+4. Writes merged Markdown files into `./merged`
+5. Generates summary and validation reports
 
 ---
 
-# 📊 Real Production Test Result
+# Command Parameters
+
+| Parameter          | Required | Description                                         |
+| ------------------ | -------- | --------------------------------------------------- |
+| `INPUT_DIRECTORY`  | Yes      | Folder containing Markdown files                    |
+| `OUTPUT_DIRECTORY` | Yes      | Folder where generated parts are saved              |
+| `--token-limit`    | Yes      | Maximum token capacity allowed for each output part |
+
+---
+
+# Example Workflow
 
 Input:
 
 ```
-OpenAI Documentation Dataset
+docs/
+├── introduction.md
+├── api.md
+├── examples.md
+└── guides/
+    └── setup.md
 ```
 
-Processed:
+Command:
 
-| Metric               |      Result |
-| -------------------- | ----------: |
-| Directories scanned  |       1,947 |
-| Markdown files found |      21,966 |
-| Processed files      |      21,966 |
-| Failed files         |           0 |
-| Skipped files        |           0 |
-| Original characters  | 185,142,126 |
-| Cleaned characters   | 184,646,014 |
-| Source tokens        |  47,300,852 |
-| Output tokens        |  49,753,006 |
-| Generated parts      |          36 |
-| Generated segments   |      21,966 |
-| Split files          |           0 |
-| Warnings             |           0 |
+```bash
+mdmerge docs output --token-limit 100000
+```
 
----
-
-# 📦 Output Example
-
-Generated:
+Output:
 
 ```
-Openai_Academy_Part_01_of_36.md
-
-Openai_Academy_Part_02_of_36.md
-
-Openai_Academy_Part_03_of_36.md
-
-...
-
-Openai_Academy_Part_36_of_36.md
+output/
+├── part_001.md
+├── part_002.md
+├── summary.txt
+└── validation.txt
 ```
 
 ---
 
-# 📄 Output Structure Example
+# Output Format
+
+Every merged file keeps source information:
 
 ```markdown
-# Markdown Merge — Part 01
+# Source: introduction.md
 
+(original markdown content)
 
-## Table of Contents
+# Source: api.md
 
+(original markdown content)
+```
 
-- academy.openai.com/code-of-conduct.md
-- academy.openai.com/resources/team.md
-- ...
-
+The original files are never deleted or modified.
 
 ---
 
-## Source: `academy.openai.com/code-of-conduct.md`
-
-<!-- source-path: academy.openai.com/code-of-conduct.md -->
-
-Markdown content...
-
-
----
-
-## Source: `academy.openai.com/resources/team.md`
-
-Markdown content...
-```
-
----
-
-# 🧪 Quality Verification
-
-Final checks:
-
-| Check       | Result   |
-| ----------- | -------- |
-| Ruff format | ✅ Passed |
-| Ruff lint   | ✅ Passed |
-| Mypy strict | ✅ Passed |
-| Pytest      | ✅ Passed |
-| Coverage    | ✅ 86.95% |
-| Smoke test  | ✅ Passed |
-
----
-
-# 🚀 Usage
-
-## Basic Merge
-
-```bash
-mdmerge ./docs ./output
-```
-
----
-
-## Token Controlled Merge
-
-```bash
-mdmerge ./docs ./output \
---token-limit 1500000
-```
-
-Meaning:
-
-```
-Maximum output part size:
-1,500,000 tokens
-```
-
----
-
-## Custom Encoding
-
-Default:
-
-```
-o200k_base
-```
+# Summary Report
 
 Example:
 
-```bash
-mdmerge ./docs ./output \
---encoding o200k_base
+```
+Markdown Merge Summary
+
+Input Files: 21969
+Created Parts: 34
+Token Limit: 1500000
+
+Part 001
+Files: 542
+Tokens: 723770
+
+Part 002
+Files: 66
+Tokens: 1483156
 ```
 
 ---
 
-## Custom Output Name
+# Validation Report
+
+After generation, every part is checked.
 
 Example:
 
+```
+part_001.md
+
+Tokens: 723228
+Sources: 542
+Status: OK
+
+
+Validation Result: PASSED
+```
+
+Validation guarantees:
+
+| Check                      | Result |
+| -------------------------- | ------ |
+| Token limit respected      | Yes    |
+| Source markers exist       | Yes    |
+| Output files readable      | Yes    |
+| Markdown content preserved | Yes    |
+
+---
+
+# Development Commands
+
+Run formatting check:
+
 ```bash
-mdmerge ./docs ./output \
---output-prefix OpenAI_Docs
+uv run ruff format --check .
 ```
 
-Creates:
-
-```
-OpenAI_Docs_Part_01_of_XX.md
-```
-
----
-
-## Full Example
+Run linting:
 
 ```bash
-mdmerge \
-/mnt/local/resources/openai/docs/ \
-/mnt/local/resources/openai/_merge/ \
---token-limit 1500000 \
---output-prefix Openai_Academy \
---encoding o200k_base
+uv run ruff check .
+```
+
+Run type checking:
+
+```bash
+uv run mypy
+```
+
+Run tests:
+
+```bash
+uv run pytest
+```
+
+Run complete quality pipeline:
+
+```bash
+./quality.sh
 ```
 
 ---
 
-# 📜 Manifest Output
+# Design Principles
 
-Generated:
-
-```
-merge_manifest.json
-```
-
-Contains:
-
-```json
-{
-  "processed_source_files": 21966,
-  "generated_segments": 21966,
-  "output_parts": 36,
-  "oversized_sources_split": 0
-}
-```
-
-This provides:
-
-* Audit trail
-* Reproducibility
-* File tracking
-* Token statistics
+| Principle               | Meaning                                       |
+| ----------------------- | --------------------------------------------- |
+| No Content Modification | Markdown files are merged exactly as provided |
+| File Boundary Splitting | A file is never cut into pieces               |
+| Exact Token Accounting  | Token limits are measured with `tiktoken`     |
+| Simple Pipeline         | Small modules with clear responsibilities     |
+| Reproducible Output     | Same input produces predictable results       |
 
 ---
 
-# 🏆 Final Project Result
+# Project Status
 
-```
-Before:
+Current capabilities:
 
-Manual Markdown merging
-        |
-        v
-Guess file count
-        |
-        v
-Risk of oversized context
+| Component            | Status   |
+| -------------------- | -------- |
+| Markdown scanning    | Complete |
+| Token counting       | Complete |
+| File-based splitting | Complete |
+| Output writing       | Complete |
+| Validation           | Complete |
+| Automated tests      | Complete |
 
+---
 
-After:
+# License
 
-Markdown Collection
-        |
-        v
-Automatic Discovery
-        |
-        v
-Exact Token Counting
-        |
-        v
-Atomic File Packing
-        |
-        v
-Optimized AI Context Files
-```
-
-## Final Status
-
-```
-markdownMerge v1.0.0
-
-STATUS: PRODUCTION READY ✅
-```
-
-A large documentation collection can now be converted into AI-optimized Markdown context files with one command.
+MIT License
