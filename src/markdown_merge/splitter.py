@@ -1,86 +1,82 @@
-"""Source document splitting utilities."""
+from dataclasses import dataclass
+from pathlib import Path
 
-from __future__ import annotations
-
-from markdown_merge.models import DocumentSegment, SourceDocument
-from markdown_merge.renderer import render_segment
-from markdown_merge.tokenizer import TokenCounter
+from .tokenizer import count_tokens
 
 
-def split_source_document(
-    document: SourceDocument,
-    token_budget: int,
-    token_counter: TokenCounter,
-    minimum_split_search_tokens: int = 512,
-) -> list[DocumentSegment]:
-    """Split oversized source documents into token-safe segments."""
+@dataclass
+class FileChunk:
+    path: Path
+    content: str
+    tokens: int
 
-    del minimum_split_search_tokens
 
-    full_rendered = render_segment(
-        source_path=document.relative_path,
-        segment_index=1,
-        segment_count=1,
-        content=document.content,
-    )
+@dataclass
+class Part:
+    number: int
+    files: list[FileChunk]
+    tokens: int
 
-    full_tokens = token_counter.count(full_rendered)
 
-    if full_tokens <= token_budget:
-        return [
-            DocumentSegment(
-                source_path=document.relative_path,
-                segment_index=1,
-                segment_count=1,
-                content=document.content,
-                rendered_content=full_rendered,
-                token_count=full_tokens,
-            )
-        ]
+def split_files(
+    files: list[Path],
+    token_limit: int,
+) -> list[Part]:
+    parts: list[Part] = []
 
-    safe_budget = int(token_budget * 0.90)
+    effective_limit = token_limit - 5000
 
-    chunks: list[str] = []
-    current: list[str] = []
+    current_files: list[FileChunk] = []
     current_tokens = 0
+    part_number = 1
 
-    lines = document.content.splitlines(keepends=True)
+    total_files = len(files)
 
-    for line in lines:
-        line_tokens = token_counter.count(line + "\n")
+    for index, file_path in enumerate(files, start=1):
+        print(
+            f"[{index}/{total_files}] processing {file_path.name}"
+        )
 
-        if current and current_tokens + line_tokens > safe_budget:
-            chunks.append("".join(current))
-            current = []
+        content = file_path.read_text(encoding="utf-8")
+
+        source_header = f"# Source: {file_path.name}\n\n"
+
+        file_tokens = (
+            count_tokens(source_header)
+            + count_tokens(content)
+            + count_tokens("\n\n")
+        )
+
+        if current_files and current_tokens + file_tokens > effective_limit:
+            parts.append(
+                Part(
+                    number=part_number,
+                    files=current_files,
+                    tokens=current_tokens,
+                )
+            )
+
+            part_number += 1
+            current_files = []
             current_tokens = 0
 
-        current.append(line)
-        current_tokens += line_tokens
-
-    if current:
-        chunks.append("".join(current))
-
-    segments: list[DocumentSegment] = []
-
-    total = len(chunks)
-
-    for index, chunk in enumerate(chunks, start=1):
-        rendered = render_segment(
-            source_path=document.relative_path,
-            segment_index=index,
-            segment_count=total,
-            content=chunk,
-        )
-
-        segments.append(
-            DocumentSegment(
-                source_path=document.relative_path,
-                segment_index=index,
-                segment_count=total,
-                content=chunk,
-                rendered_content=rendered,
-                token_count=token_counter.count(rendered),
+        current_files.append(
+            FileChunk(
+                path=file_path,
+                content=content,
+                tokens=file_tokens,
             )
         )
 
-    return segments
+        current_tokens += file_tokens
+
+    if current_files:
+        parts.append(
+            Part(
+                number=part_number,
+                files=current_files,
+                tokens=current_tokens,
+            )
+        )
+
+    return parts

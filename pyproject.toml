@@ -1,24 +1,14 @@
 [project]
 name = "markdown-merge"
 version = "1.0.0"
-description = "Token-aware Markdown cleaner, merger, and smart chunker"
+description = "Token-aware Markdown file merger that keeps Markdown files unchanged"
 requires-python = ">=3.11"
 dependencies = [
-    "click>=8.1.7",
-    "rich>=13.9.4",
     "tiktoken>=0.9.0",
 ]
 
 [project.scripts]
 mdmerge = "markdown_merge.cli:main"
-
-[dependency-groups]
-dev = [
-    "mypy>=1.14.1",
-    "pytest>=8.3.4",
-    "pytest-cov>=6.0.0",
-    "ruff>=0.9.3",
-]
 
 [build-system]
 requires = ["hatchling"]
@@ -26,57 +16,3 @@ build-backend = "hatchling.build"
 
 [tool.hatch.build.targets.wheel]
 packages = ["src/markdown_merge"]
-
-[tool.ruff]
-target-version = "py311"
-line-length = 100
-src = ["src", "tests"]
-
-[tool.ruff.lint]
-select = [
-    "E",
-    "F",
-    "I",
-    "UP",
-    "B",
-    "SIM",
-    "C4",
-    "RUF",
-]
-ignore = []
-
-[tool.ruff.format]
-quote-style = "double"
-indent-style = "space"
-line-ending = "lf"
-
-[tool.mypy]
-python_version = "3.11"
-strict = true
-pretty = true
-show_error_codes = true
-files = ["src", "main.py"]
-
-[tool.pytest.ini_options]
-testpaths = ["tests"]
-addopts = [
-    "-ra",
-    "--strict-markers",
-    "--strict-config",
-    "--cov=markdown_merge",
-    "--cov-report=term-missing",
-]
-
-[tool.coverage.run]
-branch = true
-source = ["markdown_merge"]
-omit = [
-    "src/markdown_merge/cli.py",
-    "src/markdown_merge/ui.py",
-    "src/markdown_merge/logging_setup.py",
-]
-
-[tool.coverage.report]
-show_missing = true
-skip_covered = true
-fail_under = 80

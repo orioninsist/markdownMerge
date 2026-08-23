@@ -104,3 +104,10 @@ Desktop.ini
 *.tmp
 *.temp
 src/markdown_merge/*.progress_backup
+
+# Python cache
+__pycache__/
+*.pyc
+
+# Runtime output
+output/
