@@ -62,20 +62,34 @@ def main() -> None:
 
     output_path = Path(args.output_directory)
 
-    (output_path / "summary.txt").write_text(
+    summary_path = output_path / "summary.txt"
+
+    if summary_path.exists():
+        summary_path.unlink()
+
+    summary_path.write_text(
         summary,
         encoding="utf-8",
     )
+
+    summary_path.chmod(0o644)
 
     validation = validate_output(
         args.output_directory,
         args.token_limit,
     )
 
-    (output_path / "validation.txt").write_text(
+    validation_path = output_path / "validation.txt"
+
+    if validation_path.exists():
+        validation_path.unlink()
+
+    validation_path.write_text(
         validation,
         encoding="utf-8",
     )
+
+    validation_path.chmod(0o644)
 
     print()
     print(summary)
