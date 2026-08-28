@@ -52,6 +52,7 @@ def main() -> None:
     write_parts(
         parts,
         args.output_directory,
+        args.input_directory,
     )
 
     summary = create_summary(
