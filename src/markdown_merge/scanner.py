@@ -27,8 +27,5 @@ def scan_markdown_files(
         file
         for file in path.rglob("*.md")
         if file.is_file()
-        and not (
-            excluded is not None
-            and _is_relative_to(file.resolve(), excluded)
-        )
+        and not (excluded is not None and _is_relative_to(file.resolve(), excluded))
     )
