@@ -709,7 +709,7 @@ du -h OUTPUT_DIRECTORY/*
 
 You may run the same command again.
 
-Because output names are now semantic and can change when part membership changes, use a dedicated output directory for each corpus and clear or replace that directory before a fresh run if you do not want older generated Markdown files retained.
+Output names are based only on the required `--name` value and sequential part numbers. Use a dedicated output directory for each corpus and clear or replace that directory before a fresh run if you do not want older generated Markdown files retained.
 
 ## Help
 
