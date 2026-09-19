@@ -1,47 +1,7 @@
-import re
 from pathlib import Path
 
+from .naming import unique_part_filenames
 from .splitter import Part
-
-
-def _clean_name(name: str) -> str:
-    cleaned = name.lower()
-    cleaned = re.sub(r"[^a-z0-9]+", "_", cleaned)
-    cleaned = cleaned.strip("_")
-
-    if not cleaned:
-        return "merged_docs"
-
-    return cleaned[:50]
-
-
-def _get_source_name(input_directory: str) -> str:
-    input_path = Path(input_directory)
-    parts = input_path.parts
-
-    docs_indexes = [index for index, part in enumerate(parts) if part.lower() == "docs"]
-
-    if docs_indexes:
-        docs_index = docs_indexes[-1]
-
-        if docs_index + 1 < len(parts):
-            return _clean_name(parts[docs_index + 1])
-
-        if docs_index > 0:
-            return _clean_name(parts[docs_index - 1])
-
-    if input_path.name:
-        return _clean_name(input_path.name)
-
-    return "merged_docs"
-
-
-def _remove_stale_parts(output_path: Path, source_name: str) -> None:
-    pattern = re.compile(rf"^{re.escape(source_name)}-(\d+)\.md$")
-
-    for candidate in output_path.glob(f"{source_name}-*.md"):
-        if candidate.is_file() and pattern.fullmatch(candidate.name):
-            candidate.unlink()
 
 
 def write_parts(
@@ -52,13 +12,11 @@ def write_parts(
     output_path = Path(output_directory)
     output_path.mkdir(parents=True, exist_ok=True)
 
-    source_name = _get_source_name(input_directory)
-    _remove_stale_parts(output_path, source_name)
-
     created_files: list[Path] = []
+    filenames = unique_part_filenames(parts, input_directory=input_directory)
 
-    for part in parts:
-        file_path = output_path / f"{source_name}-{part.number}.md"
+    for part, filename in zip(parts, filenames, strict=True):
+        file_path = output_path / filename
 
         with file_path.open("w", encoding="utf-8") as output:
             for file_chunk in part.files:
