@@ -23,23 +23,12 @@ def create_summary(
     lines.append(f"Tokenizer: {tokenizer_name}")
     lines.append("")
 
-    validation_by_name = {item.name: item for item in validation.parts}
-
-    for part in parts:
-        matching = next(
-            (
-                item
-                for item in validation.parts
-                if item.name.endswith(f"-{part.number}.md")
-            ),
-            None,
-        )
-
+    for index, part in enumerate(parts):
         lines.append(f"Part {part.number:03d}")
         lines.append("-" * 8)
         lines.append(f"Files: {len(part.files)}")
-        if matching is not None:
-            lines.append(f"Tokens: {matching.tokens}")
+        if index < len(validation.parts):
+            lines.append(f"Tokens: {validation.parts[index].tokens}")
         else:
             lines.append(f"Planned Tokens: {part.tokens}")
         lines.append("")
