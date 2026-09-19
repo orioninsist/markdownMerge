@@ -91,7 +91,11 @@ def _common_directory(parts: list[Path]) -> str | None:
 
     if len(set(first_components)) == 1:
         candidate = _slug(first_components[0])
-        if candidate and candidate not in _GENERIC_STEMS:
+        if (
+            candidate
+            and candidate not in _GENERIC_STEMS
+            and candidate not in _STOP_WORDS
+        ):
             return candidate
     return None
 
@@ -107,9 +111,7 @@ def semantic_part_name(
 
     common_dir = _common_directory(source_paths)
     stems = [
-        stem
-        for path in source_paths
-        if (stem := _meaningful_stem(path)) is not None
+        stem for path in source_paths if (stem := _meaningful_stem(path)) is not None
     ]
 
     token_counts: Counter[str] = Counter()
@@ -131,7 +133,8 @@ def semantic_part_name(
     )
 
     topics: list[str] = []
-    if common_dir:
+
+    if common_dir and not stems:
         topics.append(common_dir)
 
     for stem in stems:
