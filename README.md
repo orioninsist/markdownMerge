@@ -2,22 +2,48 @@
 
 A token-aware Markdown packer for large documentation collections and LLM upload workflows.
 
-markdownMerge scans Markdown files recursively, counts tokens with OpenAI's tiktoken library, packs complete source files into deterministic output parts with a First-Fit Decreasing strategy, writes the merged files, and then re-validates the final written output. A source Markdown file is never split or modified.
+markdownMerge recursively scans Markdown files, counts tokens with OpenAI's `tiktoken`, packs complete source files into deterministic output parts with First-Fit Decreasing, writes the merged Markdown files, and then re-tokenizes the final outputs for validation.
 
-## What It Solves
+Source Markdown files are never split and their content is never rewritten.
 
-Large documentation exports often contain thousands of Markdown files, while LLM tools impose practical limits on file count, context size, and token budgets.
+## Purpose
 
-markdownMerge reduces a directory tree into a smaller set of upload-friendly Markdown parts while preserving source boundaries and source paths.
+Use markdownMerge when you have many Markdown files and want to reduce them to fewer upload-ready files without exceeding a token budget.
 
-The project is intentionally focused on one job:
+Typical workflow:
 
-1. Discover Markdown source files.
-2. Measure them with a selected tiktoken model or encoding.
-3. Pack complete files into parts under a token budget.
-4. Write deterministic merged outputs.
-5. Re-tokenize the generated files and fail if the real output exceeds the configured limit.
-6. Produce summary, validation, and manifest metadata.
+```text
+many Markdown files
+        |
+        v
+recursive scan
+        |
+        v
+tiktoken measurement
+        |
+        v
+First-Fit Decreasing packing
+        |
+        v
+fewer merged Markdown files
+        |
+        v
+final token validation
+        |
+        +--> summary.txt
+        +--> validation.txt
+        +--> manifest.json
+```
+
+The project focuses on one job:
+
+- keep each source file intact
+- keep source content unchanged
+- respect a configured token budget
+- minimize the number of merged output files
+- keep output deterministic
+- preserve source traceability
+- validate the actual files written to disk
 
 ## Architecture
 
@@ -25,16 +51,16 @@ The project is intentionally focused on one job:
 Input directory
       |
       v
-  scanner.py
+scanner.py
       |
       v
- tokenizer.py
+tokenizer.py
       |
       v
- splitter.py
+splitter.py
       |
       v
-  writer.py
+writer.py
       |
       v
 validator.py
@@ -51,108 +77,183 @@ Merged Markdown parts
 
 Recursively discovers `.md` files in deterministic sorted order.
 
-It validates that the input path is a directory and supports excluding a directory from scanning. The CLI also rejects an output directory that is inside the input directory, preventing generated parts from becoming source files on a later run.
+The input path must be a directory.
+
+The CLI rejects an output directory that is equal to, or located inside, the input directory. This prevents generated files from being picked up as source files on later runs.
 
 ### tokenizer.py
 
-Uses tiktoken to count tokens.
+Uses the `tiktoken` Python package.
 
-You can select either:
+Tokenization is delegated to tiktoken's native implementation; markdownMerge itself remains a Python application.
 
-- a model through `--model`
-- an explicit encoding through `--encoding`
+Two tokenizer selection modes are available:
 
-The two options are mutually exclusive.
+```text
+--model MODEL
+--encoding ENCODING
+```
+
+They are mutually exclusive.
+
+Examples:
+
+```bash
+--model gpt-4o
+```
+
+```bash
+--encoding o200k_base
+```
 
 ### splitter.py
 
-Creates token-aware parts without splitting source files. Sources are measured first, sorted by descending token count with source path as a deterministic tie-breaker, and then packed with First-Fit Decreasing. This reduces wasted capacity and generally produces fewer merged files than sequential packing while preserving every source file unchanged.
-
-Each source is measured together with its generated source header:
+Measures every complete source file together with its generated source marker:
 
 ```markdown
 # Source: guides/setup.md
 ```
 
-Packing uses an effective planning budget:
+The usable planning budget is:
 
 ```text
 effective limit = token limit - reserve tokens
 ```
 
-If one complete source file is larger than the effective limit, markdownMerge exits with an error instead of cutting that file.
+Sources are sorted by:
+
+1. token count, descending
+2. source path, ascending, as a deterministic tie-breaker
+
+They are then packed with First-Fit Decreasing.
+
+This generally produces fewer output files than sequential packing.
+
+If one source file is larger than the effective token limit, markdownMerge stops with an error. It does not split that source file.
 
 ### writer.py
 
-Writes each planned part to disk.
+Writes every planned part to disk.
 
-Only source metadata is retained during planning; source bodies are re-read when the final output is written. This avoids retaining the entire documentation corpus in memory.
+Each merged section starts with a source marker:
 
-Before writing, stale generated parts matching the current output naming pattern are removed. Unrelated Markdown files in the output directory are left untouched.
+```markdown
+# Source: api/authentication.md
+
+(original source content)
+```
+
+The original Markdown body is not rewritten, summarized, normalized, or otherwise transformed.
 
 ### validator.py
 
-Re-reads and re-tokenizes only the files generated by the current run.
+Re-reads and re-tokenizes the final generated Markdown files.
 
-Validation checks:
+Validation fails when:
 
-- the real written token count does not exceed `--token-limit`
-- at least one exact source marker exists
-- an empty generated-part set cannot pass validation
+- no output parts were generated
+- an output part has no source marker
+- a final output part exceeds `--token-limit`
 
-Validation does not scan arbitrary Markdown files that happen to exist in the output directory.
+The final written file is authoritative, not only the planning estimate.
 
-### summary.py and manifest.json
+### summary.txt
 
-The summary reports final token counts and part-level statistics.
+Human-readable run summary with part and token statistics.
 
-The JSON manifest records:
+### validation.txt
+
+Human-readable validation report for each generated part.
+
+### manifest.json
+
+Machine-readable metadata including:
 
 - input directory
-- tokenizer configuration
 - token limit
 - reserve tokens
-- effective planning limit
-- number of input files
-- generated parts
-- final token counts
-- source membership for every part
+- effective token limit
+- tokenizer selection
+- input file count
+- created part count
 - validation result
+- final token count for each part
+- source files contained in each part
+
+## Requirements
+
+- Python 3.11 or newer
+- `uv`
+- supported platform for the installed `tiktoken` package
+
+You do not need to clone or build the tiktoken repository separately.
+
+`uv sync` installs the published dependency, normally using a prebuilt wheel when one is available for the current platform.
 
 ## Installation
 
-Clone the repository and create the project environment:
+Clone:
 
 ```bash
 git clone https://github.com/orioninsist/markdownMerge.git
 cd markdownMerge
+```
+
+Install runtime dependencies:
+
+```bash
 uv sync
 ```
 
-For development tools and tests:
+Install runtime plus development dependencies:
 
 ```bash
 uv sync --group dev
 ```
 
-Run the CLI directly through uv:
+Check the CLI:
 
 ```bash
 uv run mdmerge --help
 ```
 
-## Usage
-
-Using a model:
+## Command syntax
 
 ```bash
 uv run mdmerge INPUT_DIRECTORY OUTPUT_DIRECTORY \
-  --token-limit 120000 \
-  --reserve-tokens 5000 \
-  --model gpt-4o
+  --token-limit TOKEN_LIMIT \
+  [--reserve-tokens RESERVE_TOKENS] \
+  [--model MODEL | --encoding ENCODING]
 ```
 
-Using an explicit tiktoken encoding:
+Required arguments:
+
+```text
+INPUT_DIRECTORY
+OUTPUT_DIRECTORY
+--token-limit
+```
+
+Optional arguments:
+
+```text
+--reserve-tokens
+--model
+--encoding
+```
+
+Defaults:
+
+```text
+--reserve-tokens 5000
+--model gpt-4o
+```
+
+Because `--model` and `--encoding` are mutually exclusive, use only one of them.
+
+## Recommended usage
+
+For a stable explicit tokenizer selection:
 
 ```bash
 uv run mdmerge INPUT_DIRECTORY OUTPUT_DIRECTORY \
@@ -161,137 +262,563 @@ uv run mdmerge INPUT_DIRECTORY OUTPUT_DIRECTORY \
   --encoding o200k_base
 ```
 
-`OUTPUT_DIRECTORY` must be outside `INPUT_DIRECTORY`.
-
-## Example
-
-Input:
-
-```text
-docs/
-├── introduction.md
-├── api.md
-└── guides/
-    └── setup.md
-```
-
-Command:
+Example:
 
 ```bash
-uv run mdmerge docs merged \
+uv run mdmerge \
+  /mnt/local/resources/google/docs \
+  /mnt/local/resources/google/merged \
+  --token-limit 120000 \
+  --reserve-tokens 5000 \
+  --encoding o200k_base
+```
+
+Planning budget:
+
+```text
+token limit:      120000
+reserve tokens:     5000
+effective limit:  115000
+```
+
+The packer plans against 115,000 tokens. The final written file may use the remaining reserve but must not exceed 120,000 tokens.
+
+## All usage variations
+
+### 1. Explicit encoding
+
+Use this when you want to pin the exact tiktoken encoding explicitly.
+
+```bash
+uv run mdmerge INPUT OUTPUT \
+  --token-limit 120000 \
+  --reserve-tokens 5000 \
+  --encoding o200k_base
+```
+
+### 2. Model-based tokenizer selection
+
+Use this when you want tiktoken to resolve the encoding from a supported model name.
+
+```bash
+uv run mdmerge INPUT OUTPUT \
   --token-limit 120000 \
   --reserve-tokens 5000 \
   --model gpt-4o
 ```
 
-Possible output:
+### 3. Use the default model
+
+If neither `--model` nor `--encoding` is supplied, the current CLI default is `gpt-4o`.
+
+```bash
+uv run mdmerge INPUT OUTPUT \
+  --token-limit 120000
+```
+
+Equivalent to:
+
+```bash
+uv run mdmerge INPUT OUTPUT \
+  --token-limit 120000 \
+  --reserve-tokens 5000 \
+  --model gpt-4o
+```
+
+### 4. No reserve
+
+Useful when you deliberately want the planning budget to equal the final token limit.
+
+```bash
+uv run mdmerge INPUT OUTPUT \
+  --token-limit 120000 \
+  --reserve-tokens 0 \
+  --encoding o200k_base
+```
+
+This removes the planning safety buffer.
+
+Final validation still runs.
+
+### 5. Larger reserve
+
+Use a larger reserve when you want more unused capacity per generated part.
+
+```bash
+uv run mdmerge INPUT OUTPUT \
+  --token-limit 120000 \
+  --reserve-tokens 10000 \
+  --encoding o200k_base
+```
+
+Effective packing budget:
+
+```text
+110000
+```
+
+### 6. Smaller token limit
+
+```bash
+uv run mdmerge INPUT OUTPUT \
+  --token-limit 50000 \
+  --reserve-tokens 5000 \
+  --encoding o200k_base
+```
+
+Effective packing budget:
+
+```text
+45000
+```
+
+### 7. Very large corpus
+
+No special command is required for thousands of source files.
+
+```bash
+uv run mdmerge \
+  /data/docs \
+  /data/merged-docs \
+  --token-limit 120000 \
+  --reserve-tokens 5000 \
+  --encoding o200k_base
+```
+
+The scanner searches recursively, so nested directories are included automatically.
+
+## Input examples
+
+Simple:
+
+```text
+docs/
+├── introduction.md
+├── api.md
+└── setup.md
+```
+
+Nested:
+
+```text
+docs/
+├── api/
+│   ├── authentication.md
+│   └── errors.md
+├── guides/
+│   ├── linux.md
+│   └── windows.md
+└── index.md
+```
+
+All nested `.md` files are discovered.
+
+## Output example
+
+If the input directory is:
+
+```text
+/docs
+```
+
+the generated part names are based on the input directory name:
 
 ```text
 merged/
 ├── docs-1.md
 ├── docs-2.md
+├── docs-3.md
 ├── manifest.json
 ├── summary.txt
 └── validation.txt
 ```
 
-Merged content keeps the input-relative source path:
+A merged file looks like:
 
 ```markdown
-# Source: introduction.md
+# Source: api/authentication.md
 
-(original content)
+# Authentication
 
-# Source: guides/setup.md
+Original content...
 
-(original content)
+# Source: guides/linux.md
+
+# Linux
+
+Original content...
 ```
 
-## Token Safety
+## Output directory rule
 
-The planning stage deliberately leaves `--reserve-tokens` unused.
+The output directory must be outside the input directory.
+
+Valid:
+
+```text
+input:  /data/docs
+output: /data/merged
+```
+
+Invalid:
+
+```text
+input:  /data/docs
+output: /data/docs/merged
+```
+
+Also invalid:
+
+```text
+input:  /data/docs
+output: /data/docs
+```
+
+This protection prevents generated merged files from later becoming input sources.
+
+## Token limit rules
+
+`--token-limit` must be greater than zero.
+
+Valid:
+
+```bash
+--token-limit 120000
+```
+
+Invalid:
+
+```bash
+--token-limit 0
+```
+
+`--reserve-tokens` cannot be negative.
+
+Valid:
+
+```bash
+--reserve-tokens 5000
+```
+
+Invalid:
+
+```bash
+--reserve-tokens -1
+```
+
+Reserve must be smaller than the token limit.
+
+Valid:
+
+```text
+token limit:     120000
+reserve tokens:   5000
+```
+
+Invalid:
+
+```text
+token limit:     120000
+reserve tokens: 120000
+```
+
+## Oversized source files
+
+A single source Markdown file is never divided between parts.
 
 For example:
 
 ```text
---token-limit     120000
---reserve-tokens    5000
-effective limit   115000
+effective limit: 115000
+one-source.md:   130000 tokens
 ```
 
-Files are packed against 115,000 planned tokens, while the final output is allowed up to 120,000 tokens.
+markdownMerge exits with an error.
 
-This reserve helps absorb small token-count differences caused by concatenation boundaries. The final written file is always re-tokenized, and validation is authoritative.
+To proceed, you must explicitly choose a larger token limit, a smaller reserve, or change/remove that source file yourself.
 
-## Output Safety
+markdownMerge will not silently modify it.
 
-markdownMerge protects repeat runs in several ways:
+## Deterministic packing
 
-- the output directory cannot be the input directory or live below it
-- only generated files from the current run are validated
-- stale generated part files for the current source name are removed before writing
-- unrelated Markdown files in the output directory are preserved
-- source markers use relative paths instead of absolute machine-specific paths
+The same:
 
-## Quality Checks
+- source contents
+- source paths
+- token limit
+- reserve
+- tokenizer
 
-Run the full project verification:
+produce the same packing order and output membership.
+
+The packer uses First-Fit Decreasing:
+
+```text
+measure all sources
+        |
+        v
+sort largest -> smallest
+        |
+        v
+put each source into the first existing part where it fits
+        |
+        +-- no existing part fits --> create a new part
+```
+
+The goal is fewer output files while remaining below the effective planning limit.
+
+First-Fit Decreasing is a packing heuristic; it is not a guarantee of the mathematically optimal minimum number of bins for every possible input.
+
+## Source integrity
+
+markdownMerge does not:
+
+- rewrite prose
+- summarize content
+- remove sections
+- normalize Markdown
+- alter code blocks
+- alter syntax-highlight language identifiers
+- split a source Markdown file
+- semantically cluster or reorder text inside a source file
+
+It only decides which complete source files belong in each merged output part.
+
+Generated source headers are added so each original file remains traceable.
+
+## tiktoken runtime
+
+markdownMerge is written in Python.
+
+Tokenization uses the `tiktoken` dependency.
+
+Conceptually:
+
+```text
+markdownMerge
+    |
+    +-- Python CLI
+    +-- Python filesystem logic
+    +-- Python packing logic
+    +-- Python reporting
+    |
+    +--> tiktoken Python API
+             |
+             v
+        native tokenization implementation
+```
+
+You normally do not build tiktoken manually.
+
+Install everything with:
+
+```bash
+uv sync
+```
+
+## Choosing model vs encoding
+
+Use:
+
+```bash
+--model gpt-4o
+```
+
+when you specifically want model-name resolution.
+
+Use:
+
+```bash
+--encoding o200k_base
+```
+
+when you want to explicitly pin the tokenizer encoding.
+
+For repeatable document packing where model aliases may change over time, explicitly selecting an encoding can make the configuration easier to understand and reproduce.
+
+## What happens during a run
+
+Example command:
+
+```bash
+uv run mdmerge docs merged \
+  --token-limit 120000 \
+  --reserve-tokens 5000 \
+  --encoding o200k_base
+```
+
+Execution:
+
+```text
+1. validate CLI arguments
+2. recursively scan docs/
+3. count every source with tiktoken
+4. reject any individual source above the effective limit
+5. sort measured sources by descending token count
+6. pack with First-Fit Decreasing
+7. write merged Markdown parts
+8. re-read every generated part
+9. re-tokenize every generated part
+10. generate validation.txt
+11. generate summary.txt
+12. generate manifest.json
+13. exit successfully only if validation passes
+```
+
+## Checking results
+
+After a successful run:
+
+```bash
+cat OUTPUT_DIRECTORY/summary.txt
+```
+
+```bash
+cat OUTPUT_DIRECTORY/validation.txt
+```
+
+For structured details:
+
+```bash
+cat OUTPUT_DIRECTORY/manifest.json
+```
+
+With `jq`:
+
+```bash
+jq . OUTPUT_DIRECTORY/manifest.json
+```
+
+List generated parts:
+
+```bash
+find OUTPUT_DIRECTORY -maxdepth 1 -type f -name '*.md' -print | sort
+```
+
+Check file sizes:
+
+```bash
+du -h OUTPUT_DIRECTORY/*
+```
+
+## Re-running
+
+You may run the same command again.
+
+Before writing, markdownMerge removes stale generated part files matching the current source output naming pattern.
+
+Unrelated Markdown files in the output directory are preserved.
+
+For predictable operation, use a dedicated output directory for each corpus.
+
+## Help
+
+Show all CLI options:
+
+```bash
+uv run mdmerge --help
+```
+
+Current CLI form:
+
+```text
+usage: mdmerge [-h] --token-limit TOKEN_LIMIT
+               [--reserve-tokens RESERVE_TOKENS]
+               [--model MODEL | --encoding ENCODING_NAME]
+               input_directory output_directory
+```
+
+## Development and verification
+
+Install development dependencies:
+
+```bash
+uv sync --group dev
+```
+
+Run the complete project quality pipeline:
 
 ```bash
 ./quality.sh
 ```
 
-The quality pipeline runs:
+It verifies:
 
 ```text
-Ruff format check
+Ruff formatting
 Ruff lint
 Mypy strict type checking
 Pytest
-CLI help smoke test
-Direct entry-point smoke test
+CLI help
+Direct entry point
 ```
 
-Or run them individually:
+Run checks individually:
 
 ```bash
 uv run ruff format --check .
 uv run ruff check .
 uv run mypy
 uv run --group dev python -m pytest
+uv run mdmerge --help
+uv run python main.py --help
 ```
 
-## Design Principles
+## Troubleshooting
 
-- Never modify source Markdown files.
-- Never split an individual source file.
-- Keep packing deterministic.
-- Minimize the number of merged output files without violating the effective token budget.
-- Prefer explicit failure over silently exceeding a token budget.
-- Validate the actual written output, not only planning estimates.
-- Keep source paths portable and relative.
-- Keep unrelated files outside the generated-part lifecycle.
-- Avoid unnecessary framework or architecture layers.
+### No Markdown files found
 
-## Scope and Non-Goals
+The input directory contains no recursively discoverable `.md` files.
 
-markdownMerge manages Markdown packing and tokenizer budgets.
+### Input path is not a directory
 
-It does not attempt to model every upload rule of every LLM platform. File-size limits, file-count limits, retrieval behavior, product-specific context windows, and other platform constraints must be evaluated separately.
+Pass a directory, not a single Markdown file.
 
-It also does not rewrite, summarize, normalize, or otherwise alter source Markdown content.
+### OUTPUT_DIRECTORY must be outside INPUT_DIRECTORY
 
-## Tokenizer Runtime
+Choose a sibling or otherwise separate output directory.
 
-markdownMerge keeps orchestration, file I/O, packing, reporting, and validation in Python. Tokenization is delegated to the `tiktoken` dependency. `tiktoken` exposes a Python API backed by its native Rust implementation, so markdownMerge does not reimplement BPE tokenization or require a Rust rewrite of the application.
+### Source file exceeds the effective token limit
 
-`uv sync` installs the published `tiktoken` package (normally from a prebuilt wheel when one is available for the platform); users do not need to clone or build the tiktoken repository separately.
+One complete source file is too large for the configured planning budget.
 
-## Current Status
+Increase `--token-limit`, reduce `--reserve-tokens`, or handle that source file separately.
 
-The core architecture is complete and suitable for real dataset use.
+### Unknown model
 
-At this stage, further changes should be driven by measured behavior on real documentation sets rather than broad architectural rewrites.
+If tiktoken does not recognize a model name, use a supported model name or specify an encoding explicitly:
+
+```bash
+--encoding o200k_base
+```
+
+### Validation failed
+
+Inspect:
+
+```bash
+cat OUTPUT_DIRECTORY/validation.txt
+```
+
+The final written files are re-tokenized, so validation is the authoritative result.
+
+## Scope
+
+markdownMerge is intentionally small.
+
+It does not attempt to:
+
+- upload files to an AI service
+- call OpenAI, Gemini, Grok, Copilot, or another remote model API
+- infer platform upload limits
+- choose a token limit for you
+- modify source content
+- summarize sources
+- split oversized source files
+- perform semantic clustering
+- act as a crawler
+
+It takes an input Markdown corpus and a token budget and produces fewer validated Markdown files.
 
 ## License
 
