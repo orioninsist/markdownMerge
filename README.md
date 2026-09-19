@@ -2,7 +2,7 @@
 
 A token-aware Markdown packer for large documentation collections and LLM upload workflows.
 
-markdownMerge scans Markdown files recursively, counts tokens with tiktoken, groups complete source files into deterministic output parts, writes the merged files, and then re-validates the final written output. A source Markdown file is never split or modified.
+markdownMerge scans Markdown files recursively, counts tokens with OpenAI's tiktoken library, packs complete source files into deterministic output parts with a First-Fit Decreasing strategy, writes the merged files, and then re-validates the final written output. A source Markdown file is never split or modified.
 
 ## What It Solves
 
@@ -66,7 +66,7 @@ The two options are mutually exclusive.
 
 ### splitter.py
 
-Creates token-aware parts without splitting source files.
+Creates token-aware parts without splitting source files. Sources are measured first, sorted by descending token count with source path as a deterministic tie-breaker, and then packed with First-Fit Decreasing. This reduces wasted capacity and generally produces fewer merged files than sequential packing while preserving every source file unchanged.
 
 Each source is measured together with its generated source header:
 
@@ -266,6 +266,7 @@ uv run --group dev python -m pytest
 - Never modify source Markdown files.
 - Never split an individual source file.
 - Keep packing deterministic.
+- Minimize the number of merged output files without violating the effective token budget.
 - Prefer explicit failure over silently exceeding a token budget.
 - Validate the actual written output, not only planning estimates.
 - Keep source paths portable and relative.
@@ -279,6 +280,12 @@ markdownMerge manages Markdown packing and tokenizer budgets.
 It does not attempt to model every upload rule of every LLM platform. File-size limits, file-count limits, retrieval behavior, product-specific context windows, and other platform constraints must be evaluated separately.
 
 It also does not rewrite, summarize, normalize, or otherwise alter source Markdown content.
+
+## Tokenizer Runtime
+
+markdownMerge keeps orchestration, file I/O, packing, reporting, and validation in Python. Tokenization is delegated to the `tiktoken` dependency. `tiktoken` exposes a Python API backed by its native Rust implementation, so markdownMerge does not reimplement BPE tokenization or require a Rust rewrite of the application.
+
+`uv sync` installs the published `tiktoken` package (normally from a prebuilt wheel when one is available for the platform); users do not need to clone or build the tiktoken repository separately.
 
 ## Current Status
 
