@@ -41,7 +41,7 @@ def test_write_parts_uses_input_derived_filename(tmp_path: Path) -> None:
     source.write_text("# Test", encoding="utf-8")
 
     output = tmp_path / "output"
-    parts = split_files([source], 100)
+    parts = split_files([source], 100, reserve_tokens=0)
 
     files = write_parts(
         parts,
@@ -58,7 +58,7 @@ def test_write_parts_uses_directory_after_docs(tmp_path: Path) -> None:
     source.write_text("# Test", encoding="utf-8")
 
     output = tmp_path / "output"
-    parts = split_files([source], 100)
+    parts = split_files([source], 100, reserve_tokens=0)
 
     files = write_parts(
         parts,
@@ -68,3 +68,23 @@ def test_write_parts_uses_directory_after_docs(tmp_path: Path) -> None:
 
     assert files == [output / "adsense-1.md"]
     assert files[0].exists()
+
+
+def test_write_parts_writes_relative_source_marker(tmp_path: Path) -> None:
+    nested = tmp_path / "guides"
+    nested.mkdir()
+    source = nested / "setup.md"
+    source.write_text("# Setup", encoding="utf-8")
+
+    output = tmp_path / "output"
+    parts = split_files(
+        [source],
+        100,
+        input_directory=str(tmp_path),
+        reserve_tokens=0,
+    )
+
+    files = write_parts(parts, str(output), str(tmp_path))
+    content = files[0].read_text(encoding="utf-8")
+
+    assert "# Source: guides/setup.md" in content
