@@ -1,285 +1,102 @@
 # markdownMerge
 
-A token-aware Markdown merge tool designed to combine thousands of Markdown files into optimized output parts without modifying the original Markdown content.
+A token-aware Markdown packer designed to combine large Markdown documentation sets into upload-friendly parts while keeping every source file intact.
 
-The project is built for large documentation datasets such as OpenAI documentation exports. It keeps every source file complete, calculates exact token usage with `tiktoken`, and splits the final merged output according to a user-defined token limit.
+It is useful for LLM workflows where both file count and token budgets matter. markdownMerge recursively scans Markdown files, measures them with tiktoken, preserves file boundaries, writes deterministic parts, re-validates the final output, and produces machine-readable metadata.
 
----
-
-# Features
+## Features
 
 | Feature | Description |
 |---|---|
-| Markdown Scanner | Recursively finds all `.md` files from an input directory |
-| File Preservation | Original Markdown content is kept unchanged |
-| Source Tracking | Adds a source marker before every merged file |
-| Token Counting | Uses `tiktoken` for accurate token calculation |
-| Smart Splitting | Splits output only between files, never inside a file |
-| Token Safety | Keeps generated parts below the requested token limit |
-| Validation | Checks every generated part after writing |
-| Summary Report | Creates a complete merge summary |
+| Markdown Scanner | Recursively finds all .md files from an input directory |
+| File Preservation | Source Markdown files are never modified or split |
+| Relative Source Tracking | Adds the source path relative to the input root |
+| Token Counting | Uses selectable tiktoken model or encoding |
+| Token Reserve | Keeps a configurable safety budget unused in each part |
+| Oversized File Guard | Fails clearly when one source file cannot fit |
+| Low-Memory Writing | Stores metadata in memory and re-reads content while writing |
+| Final Validation | Re-tokenizes written output and enforces the requested limit |
+| Summary Report | Reports final token counts for generated parts |
+| JSON Manifest | Records token settings, part metadata, and source membership |
 
----
-
-# Architecture
-
-```
-
-Markdown Files
-|
-v
-+-------------+
-|  scanner.py |
-+-------------+
-|
-v
-+---------------+
-| tokenizer.py  |
-+---------------+
-|
-v
-+---------------+
-| splitter.py   |
-+---------------+
-|
-v
-+-------------+
-| writer.py   |
-+-------------+
-|
-v
-+--------------+
-| validator.py |
-+--------------+
-|
-v
-Merged Markdown Parts
-
-````
-
----
-
-# Installation
-
-Clone the repository:
+## Usage
 
 ```bash
-git clone <repository-url>
-cd markdownMerge
-````
+mdmerge INPUT_DIRECTORY OUTPUT_DIRECTORY \
+  --token-limit 120000 \
+  --reserve-tokens 5000 \
+  --model gpt-4o
+```
 
-Install dependencies:
+Or choose an explicit encoding:
 
 ```bash
-uv sync
+mdmerge INPUT_DIRECTORY OUTPUT_DIRECTORY \
+  --token-limit 120000 \
+  --reserve-tokens 5000 \
+  --encoding o200k_base
 ```
 
-Install the command line tool:
+--model and --encoding are mutually exclusive.
 
-```bash
-uv tool install --editable .
+The effective planning budget is:
+
+```text
+token-limit - reserve-tokens
 ```
 
-Verify installation:
+The final written Markdown files are re-tokenized and must remain below --token-limit.
 
-```bash
-mdmerge --help
-```
+## Output
 
----
-
-# Basic Usage
-
-```bash
-mdmerge INPUT_DIRECTORY OUTPUT_DIRECTORY --token-limit TOKEN_LIMIT
-```
-
-Example:
-
-```bash
-mdmerge ./docs ./merged --token-limit 1500000
-```
-
-This command:
-
-1. Finds all Markdown files inside `./docs`
-2. Counts tokens for every file
-3. Groups files into parts
-4. Writes merged Markdown files into `./merged`
-5. Generates summary and validation reports
-
----
-
-# Command Parameters
-
-| Parameter          | Required | Description                                         |
-| ------------------ | -------- | --------------------------------------------------- |
-| `INPUT_DIRECTORY`  | Yes      | Folder containing Markdown files                    |
-| `OUTPUT_DIRECTORY` | Yes      | Folder where generated parts are saved              |
-| `--token-limit`    | Yes      | Maximum token capacity allowed for each output part |
-
----
-
-# Example Workflow
-
-Input:
-
-```
-docs/
-├── introduction.md
-├── api.md
-├── examples.md
-└── guides/
-    └── setup.md
-```
-
-Command:
-
-```bash
-mdmerge docs output --token-limit 100000
-```
-
-Output:
-
-```
+```text
 output/
-├── part_001.md
-├── part_002.md
+├── docs-1.md
+├── docs-2.md
+├── manifest.json
 ├── summary.txt
 └── validation.txt
 ```
 
----
-
-# Output Format
-
-Every merged file keeps source information:
+Each merged section keeps its input-relative path:
 
 ```markdown
 # Source: introduction.md
 
-(original markdown content)
+(original content)
 
-# Source: api.md
+# Source: guides/setup.md
 
-(original markdown content)
+(original content)
 ```
 
-The original files are never deleted or modified.
+If a complete source file is larger than the effective token budget, markdownMerge exits with an error instead of splitting that source file.
 
----
-
-# Summary Report
-
-Example:
-
-```
-Markdown Merge Summary
-
-Input Files: 21969
-Created Parts: 34
-Token Limit: 1500000
-
-Part 001
-Files: 542
-Tokens: 723770
-
-Part 002
-Files: 66
-Tokens: 1483156
-```
-
----
-
-# Validation Report
-
-After generation, every part is checked.
-
-Example:
-
-```
-part_001.md
-
-Tokens: 723228
-Sources: 542
-Status: OK
-
-
-Validation Result: PASSED
-```
-
-Validation guarantees:
-
-| Check                      | Result |
-| -------------------------- | ------ |
-| Token limit respected      | Yes    |
-| Source markers exist       | Yes    |
-| Output files readable      | Yes    |
-| Markdown content preserved | Yes    |
-
----
-
-# Development Commands
-
-Run formatting check:
+## Development
 
 ```bash
+uv sync
 uv run ruff format --check .
-```
-
-Run linting:
-
-```bash
 uv run ruff check .
-```
-
-Run type checking:
-
-```bash
 uv run mypy
-```
-
-Run tests:
-
-```bash
 uv run pytest
-```
-
-Run complete quality pipeline:
-
-```bash
 ./quality.sh
 ```
 
----
+## Design Principles
 
-# Design Principles
+- Never modify or split source Markdown files.
+- Preserve deterministic input ordering.
+- Fail loudly for impossible token budgets.
+- Track sources with relative paths.
+- Avoid retaining every file body in memory.
+- Re-tokenize the written output before reporting success.
+- Keep platform-specific upload limits separate from tokenizer counts.
 
-| Principle               | Meaning                                       |
-| ----------------------- | --------------------------------------------- |
-| No Content Modification | Markdown files are merged exactly as provided |
-| File Boundary Splitting | A file is never cut into pieces               |
-| Exact Token Accounting  | Token limits are measured with `tiktoken`     |
-| Simple Pipeline         | Small modules with clear responsibilities     |
-| Reproducible Output     | Same input produces predictable results       |
+## Scope
 
----
+This project manages Markdown packing and tokenizer budgets. Token counts are not identical to every upload, retrieval, file-size, or context rule an LLM product may impose. Those platform-specific limits should be checked separately.
 
-# Project Status
-
-Current capabilities:
-
-| Component            | Status   |
-| -------------------- | -------- |
-| Markdown scanning    | Complete |
-| Token counting       | Complete |
-| File-based splitting | Complete |
-| Output writing       | Complete |
-| Validation           | Complete |
-| Automated tests      | Complete |
-
----
-
-# License
+## License
 
 MIT License
