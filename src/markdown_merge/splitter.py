@@ -26,9 +26,7 @@ def _source_path(file_path: Path, root: Path | None) -> str:
     try:
         return resolved_path.relative_to(root).as_posix()
     except ValueError as exc:
-        raise ValueError(
-            f"Input file is outside input directory: {file_path}"
-        ) from exc
+        raise ValueError(f"Input file is outside input directory: {file_path}") from exc
 
 
 def _measure_files(
