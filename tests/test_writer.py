@@ -88,3 +88,27 @@ def test_write_parts_writes_relative_source_marker(tmp_path: Path) -> None:
     content = files[0].read_text(encoding="utf-8")
 
     assert "# Source: guides/setup.md" in content
+
+
+def test_write_parts_removes_stale_generated_parts(tmp_path: Path) -> None:
+    source = tmp_path / "test.md"
+    source.write_text("# Test", encoding="utf-8")
+
+    output = tmp_path / "output"
+    output.mkdir()
+    stale = output / f"{tmp_path.name}-99.md"
+    unrelated = output / "notes.md"
+    stale.write_text("# Old", encoding="utf-8")
+    unrelated.write_text("# Keep", encoding="utf-8")
+
+    parts = split_files(
+        [source],
+        100,
+        input_directory=str(tmp_path),
+        reserve_tokens=0,
+    )
+
+    write_parts(parts, str(output), str(tmp_path))
+
+    assert stale.exists() is False
+    assert unrelated.exists() is True
