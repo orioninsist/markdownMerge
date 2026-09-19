@@ -142,8 +142,7 @@ def main() -> None:
                 "sources": item.sources,
                 "status": item.status,
                 "source_files": [
-                    file_chunk.source_path
-                    for file_chunk in parts[index].files
+                    file_chunk.source_path for file_chunk in parts[index].files
                 ],
             }
             for index, item in enumerate(validation.parts)
