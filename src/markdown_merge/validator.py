@@ -1,7 +1,10 @@
+import re
 from dataclasses import dataclass
 from pathlib import Path
 
 from .tokenizer import TokenCounter
+
+SOURCE_MARKER_RE = re.compile(r"(?m)^# Source: .+$")
 
 
 @dataclass(frozen=True)
@@ -20,14 +23,12 @@ class ValidationResult:
 
 
 def validate_output(
-    output_directory: str,
+    part_paths: list[Path],
     token_limit: int,
     *,
     model: str | None = "gpt-4o",
     encoding_name: str | None = None,
 ) -> ValidationResult:
-    output_path = Path(output_directory)
-    part_paths = sorted(output_path.glob("*.md"))
     counter = TokenCounter(
         model=model,
         encoding_name=encoding_name,
@@ -41,13 +42,13 @@ def validate_output(
         "",
     ]
 
-    failed = False
+    failed = not part_paths
     validations: list[PartValidation] = []
 
     for part in part_paths:
         content = part.read_text(encoding="utf-8")
         tokens = counter.count(content)
-        sources = content.count("# Source:")
+        sources = len(SOURCE_MARKER_RE.findall(content))
 
         if tokens > token_limit:
             status = f"FAILED: token limit exceeded ({tokens} > {token_limit})"
