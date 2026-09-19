@@ -30,7 +30,7 @@ run_check() {
 run_check "Ruff formatting verification" uv run ruff format --check .
 run_check "Ruff lint verification" uv run ruff check .
 run_check "Mypy strict type checking" uv run mypy
-run_check "Pytest and coverage" uv run pytest
+run_check "Pytest and coverage" uv run --with tiktoken pytest
 run_check "CLI help smoke test" uv run mdmerge --help
 run_check "Direct entry-point smoke test" uv run python main.py --help
 
