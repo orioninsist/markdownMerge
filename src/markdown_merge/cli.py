@@ -9,6 +9,17 @@ from .validator import validate_output
 from .writer import write_parts
 
 
+def _paths_overlap(input_directory: str, output_directory: str) -> bool:
+    input_path = Path(input_directory).resolve()
+    output_path = Path(output_directory).resolve()
+
+    try:
+        output_path.relative_to(input_path)
+        return True
+    except ValueError:
+        return False
+
+
 def main() -> None:
     parser = argparse.ArgumentParser(
         description="Merge Markdown files by token limit without modifying content."
@@ -48,6 +59,8 @@ def main() -> None:
         parser.error("--reserve-tokens cannot be negative.")
     if args.reserve_tokens >= args.token_limit:
         parser.error("--reserve-tokens must be smaller than --token-limit.")
+    if _paths_overlap(args.input_directory, args.output_directory):
+        parser.error("OUTPUT_DIRECTORY must be outside INPUT_DIRECTORY.")
 
     model = None if args.encoding_name else args.model
     tokenizer_name = (
@@ -95,7 +108,7 @@ def main() -> None:
     )
 
     validation = validate_output(
-        args.output_directory,
+        created_files,
         args.token_limit,
         model=model,
         encoding_name=args.encoding_name,
