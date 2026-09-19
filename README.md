@@ -421,17 +421,21 @@ If the input directory is:
 /docs
 ```
 
-the generated part names are based on the input directory name:
+the generated part names are derived deterministically from the source paths contained in each part:
 
 ```text
 merged/
-├── docs-1.md
-├── docs-2.md
-├── docs-3.md
+├── authentication-tokens.md
+├── deployment-linux.md
+├── billing-subscriptions.md
 ├── manifest.json
 ├── summary.txt
 └── validation.txt
 ```
+
+Naming uses source file stems and useful directory names. Generic names such as `index.md`, `readme.md`, and `overview.md` are de-emphasized. If two parts resolve to the same semantic name, deterministic numeric suffixes such as `-2` are added.
+
+No remote model or API is called for naming; filenames remain local, deterministic, reproducible, and zero-cost.
 
 A merged file looks like:
 
@@ -705,11 +709,7 @@ du -h OUTPUT_DIRECTORY/*
 
 You may run the same command again.
 
-Before writing, markdownMerge removes stale generated part files matching the current source output naming pattern.
-
-Unrelated Markdown files in the output directory are preserved.
-
-For predictable operation, use a dedicated output directory for each corpus.
+Because output names are now semantic and can change when part membership changes, use a dedicated output directory for each corpus and clear or replace that directory before a fresh run if you do not want older generated Markdown files retained.
 
 ## Help
 
