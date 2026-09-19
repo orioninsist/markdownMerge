@@ -114,15 +114,22 @@ def semantic_part_name(
         stem for path in source_paths if (stem := _meaningful_stem(path)) is not None
     ]
 
+    topics: list[str] = []
+
+    for stem in stems:
+        if stem not in topics:
+            topics.append(stem)
+        if len(topics) >= max_topics:
+            break
+
+    if topics:
+        base = _slug("-".join(topics), max_length=64)
+        return base or fallback
+
     token_counts: Counter[str] = Counter()
     first_seen: dict[str, int] = {}
     for index, path in enumerate(source_paths):
-        components = list(path.parts[:-1])
-        stem = _meaningful_stem(path)
-        if stem:
-            components.append(stem)
-
-        for component in components:
+        for component in path.parts[:-1]:
             for token in _tokens(component):
                 token_counts[token] += 1
                 first_seen.setdefault(token, index)
@@ -132,16 +139,8 @@ def semantic_part_name(
         key=lambda token: (-token_counts[token], first_seen[token], token),
     )
 
-    topics: list[str] = []
-
-    if common_dir and not stems:
+    if common_dir:
         topics.append(common_dir)
-
-    for stem in stems:
-        if stem not in topics:
-            topics.append(stem)
-        if len(topics) >= max_topics:
-            break
 
     if len(topics) < max_topics:
         for token in ranked_tokens:
