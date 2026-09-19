@@ -36,6 +36,14 @@ def _get_source_name(input_directory: str) -> str:
     return "merged_docs"
 
 
+def _remove_stale_parts(output_path: Path, source_name: str) -> None:
+    pattern = re.compile(rf"^{re.escape(source_name)}-(\d+)\.md$")
+
+    for candidate in output_path.glob(f"{source_name}-*.md"):
+        if candidate.is_file() and pattern.fullmatch(candidate.name):
+            candidate.unlink()
+
+
 def write_parts(
     parts: list[Part],
     output_directory: str,
@@ -45,13 +53,12 @@ def write_parts(
     output_path.mkdir(parents=True, exist_ok=True)
 
     source_name = _get_source_name(input_directory)
+    _remove_stale_parts(output_path, source_name)
+
     created_files: list[Path] = []
 
     for part in parts:
         file_path = output_path / f"{source_name}-{part.number}.md"
-
-        if file_path.exists():
-            file_path.unlink()
 
         with file_path.open("w", encoding="utf-8") as output:
             for file_chunk in part.files:
