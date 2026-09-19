@@ -55,8 +55,8 @@ def write_parts(
 
         with file_path.open("w", encoding="utf-8") as output:
             for file_chunk in part.files:
-                output.write(f"# Source: {file_chunk.path.name}\n\n")
-                output.write(file_chunk.content)
+                output.write(f"# Source: {file_chunk.source_path}\n\n")
+                output.write(file_chunk.path.read_text(encoding="utf-8"))
                 output.write("\n\n")
 
         file_path.chmod(0o644)
