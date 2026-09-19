@@ -63,9 +63,7 @@ def test_split_files_uses_first_fit_decreasing(tmp_path: Path) -> None:
         reserve_tokens=0,
     )
     weights = {
-        chunk.source_path: chunk.tokens
-        for part in probe
-        for chunk in part.files
+        chunk.source_path: chunk.tokens for part in probe for chunk in part.files
     }
     capacity = max(
         weights["a.md"] + weights["c.md"],
