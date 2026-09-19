@@ -1,73 +1,67 @@
 from pathlib import Path
 
 from markdown_merge.splitter import split_files
-from markdown_merge.writer import _get_source_name, write_parts
+from markdown_merge.writer import write_parts
 
 
-def test_source_name_when_input_ends_with_docs() -> None:
-    source_name = _get_source_name("/mnt/local/resources/google/docs")
-
-    assert source_name == "google"
-
-
-def test_source_name_from_first_directory_after_docs() -> None:
-    source_name = _get_source_name("/mnt/local/resources/google/docs/adsense")
-
-    assert source_name == "adsense"
-
-
-def test_source_name_ignores_deeper_directories_after_docs() -> None:
-    source_name = _get_source_name(
-        "/mnt/local/resources/google/docs/adsense/reference/api"
-    )
-
-    assert source_name == "adsense"
-
-
-def test_source_name_for_openai_docs() -> None:
-    source_name = _get_source_name("/mnt/local/resources/openai/docs")
-
-    assert source_name == "openai"
-
-
-def test_source_name_for_directory_without_docs() -> None:
-    source_name = _get_source_name("/mnt/local/resources/example")
-
-    assert source_name == "example"
-
-
-def test_write_parts_uses_input_derived_filename(tmp_path: Path) -> None:
-    source = tmp_path / "test.md"
-    source.write_text("# Test", encoding="utf-8")
+def test_write_parts_uses_semantic_filename(tmp_path: Path) -> None:
+    source = tmp_path / "authentication.md"
+    source.write_text("# Authentication", encoding="utf-8")
 
     output = tmp_path / "output"
-    parts = split_files([source], 100, reserve_tokens=0)
-
-    files = write_parts(
-        parts,
-        str(output),
-        "/mnt/local/resources/google/docs",
+    parts = split_files(
+        [source],
+        100,
+        input_directory=str(tmp_path),
+        reserve_tokens=0,
     )
 
-    assert files == [output / "google-1.md"]
+    files = write_parts(parts, str(output), str(tmp_path))
+
+    assert files == [output / "authentication.md"]
     assert files[0].exists()
 
 
-def test_write_parts_uses_directory_after_docs(tmp_path: Path) -> None:
-    source = tmp_path / "test.md"
-    source.write_text("# Test", encoding="utf-8")
+def test_write_parts_uses_topics_from_multiple_sources(tmp_path: Path) -> None:
+    docs = tmp_path / "api"
+    docs.mkdir()
+    auth = docs / "authentication.md"
+    tokens = docs / "tokens.md"
+    auth.write_text("# Authentication", encoding="utf-8")
+    tokens.write_text("# Tokens", encoding="utf-8")
 
     output = tmp_path / "output"
-    parts = split_files([source], 100, reserve_tokens=0)
-
-    files = write_parts(
-        parts,
-        str(output),
-        "/mnt/local/resources/google/docs/adsense",
+    parts = split_files(
+        [auth, tokens],
+        1000,
+        input_directory=str(tmp_path),
+        reserve_tokens=0,
     )
 
-    assert files == [output / "adsense-1.md"]
-    assert files[0].exists()
+    files = write_parts(parts, str(output), str(tmp_path))
+
+    assert files == [output / "authentication-tokens.md"]
+
+
+def test_write_parts_uses_common_directory_for_generic_sources(tmp_path: Path) -> None:
+    guides = tmp_path / "security"
+    guides.mkdir()
+    index = guides / "index.md"
+    readme = guides / "readme.md"
+    index.write_text("# Index", encoding="utf-8")
+    readme.write_text("# Readme", encoding="utf-8")
+
+    output = tmp_path / "output"
+    parts = split_files(
+        [index, readme],
+        1000,
+        input_directory=str(tmp_path),
+        reserve_tokens=0,
+    )
+
+    files = write_parts(parts, str(output), str(tmp_path))
+
+    assert files == [output / "security.md"]
 
 
 def test_write_parts_writes_relative_source_marker(tmp_path: Path) -> None:
@@ -90,25 +84,28 @@ def test_write_parts_writes_relative_source_marker(tmp_path: Path) -> None:
     assert "# Source: guides/setup.md" in content
 
 
-def test_write_parts_removes_stale_generated_parts(tmp_path: Path) -> None:
-    source = tmp_path / "test.md"
-    source.write_text("# Test", encoding="utf-8")
+def test_duplicate_semantic_names_get_deterministic_suffixes(tmp_path: Path) -> None:
+    first_dir = tmp_path / "one"
+    second_dir = tmp_path / "two"
+    first_dir.mkdir()
+    second_dir.mkdir()
+
+    first = first_dir / "authentication.md"
+    second = second_dir / "authentication.md"
+    first.write_text("# Authentication one", encoding="utf-8")
+    second.write_text("# Authentication two", encoding="utf-8")
 
     output = tmp_path / "output"
-    output.mkdir()
-    stale = output / f"{tmp_path.name}-99.md"
-    unrelated = output / "notes.md"
-    stale.write_text("# Old", encoding="utf-8")
-    unrelated.write_text("# Keep", encoding="utf-8")
-
     parts = split_files(
-        [source],
-        100,
+        [first, second],
+        20,
         input_directory=str(tmp_path),
         reserve_tokens=0,
     )
 
-    write_parts(parts, str(output), str(tmp_path))
+    files = write_parts(parts, str(output), str(tmp_path))
 
-    assert stale.exists() is False
-    assert unrelated.exists() is True
+    assert [file.name for file in files] == [
+        "authentication.md",
+        "authentication-2.md",
+    ]
